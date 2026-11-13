@@ -560,11 +560,28 @@ pRandom world =
     ( n, { world | rng = rng } )
 
 
-{-| S\_StartSound.
+{-| S\_StartSound. The sound is listed with where its thing and the players are
+now, as the C source hears it at once (`Doom.Sound.StartAt`).
 -}
 startSound : Sound.Origin -> Sfx -> World -> World
 startSound origin sfx world =
-    { world | sounds = Sound.Start origin sfx :: world.sounds }
+    let
+        spot id =
+            mobj id world |> Maybe.map (\m -> { mo = m.id, x = m.x, y = m.y, angle = m.angle })
+
+        moment =
+            { gametic = world.gametic
+            , origin =
+                case origin of
+                    Sound.FromMobj id ->
+                        spot id
+
+                    _ ->
+                        Nothing
+            , players = Array.toList world.players |> List.map (\p -> p.mo |> Maybe.andThen spot)
+            }
+    in
+    { world | sounds = Sound.StartAt origin sfx moment :: world.sounds }
 
 
 {-| S\_StopSound.

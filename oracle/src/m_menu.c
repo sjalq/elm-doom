@@ -4,6 +4,11 @@
 //    musicVolume (0..15) and hands S_SetSfxVolume / S_SetMusicVolume
 //    8 times that; linuxdoom had commented out the * 8 and used
 //    s_sound.c's variables for the menu.
+//  - M_Drawer's line buffer is 256 bytes instead of 40: two quit messages
+//    (endmsg[7], endmsg[13], 52 and 47 characters on one line) overflowed
+//    it, writing over the stack (undefined behaviour; a crash here). The
+//    whole line is drawn, which is what the overflowing copy left in the
+//    buffer for M_WriteText in the original.
 
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
@@ -1755,7 +1760,7 @@ void M_Drawer (void)
     static short	y;
     short		i;
     short		max;
-    char		string[40];
+    char		string[256];	// DOOM-ORACLE: was 40, see the top of the file
     int			start;
 
     inhelpscreens = false;
@@ -1771,7 +1776,7 @@ void M_Drawer (void)
 	    for (i = 0;i < strlen(messageString+start);i++)
 		if (*(messageString+start+i) == '\n')
 		{
-		    memset(string,0,40);
+		    memset(string,0,sizeof(string));	// DOOM-ORACLE: was 40
 		    strncpy(string,messageString+start,i);
 		    start += i+1;
 		    break;

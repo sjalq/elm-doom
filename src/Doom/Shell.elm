@@ -1516,7 +1516,7 @@ display m0 =
                                     View.render rd
                                         env
                                         g.world
-                                        { screenblocks = m2.viewBlocks, detailshift = m2.viewDetail, player = m2.displayplayer, skytexture = View.skyTexture env.data env.params.episode env.params.map }
+                                        { screenblocks = m2.viewBlocks, detailshift = m2.viewDetail, player = m2.displayplayer, skytexture = g.skytexture }
                                         screen2
 
                                 else

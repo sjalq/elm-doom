@@ -43,6 +43,7 @@ import Doom.Play.Setup as Setup exposing (BodyQue)
 import Doom.Play.Spawn as Spawn
 import Doom.Play.Tick as Tick
 import Doom.Random as Random
+import Doom.Render.View as View
 import Doom.Sound as Sound
 import Doom.Ticcmd as Ticcmd exposing (Ticcmd)
 import Doom.Wad as Wad exposing (Wad)
@@ -59,6 +60,9 @@ import Doom.World as World exposing (Exit(..), World)
   - `env`: the level being played, once one has been loaded.
   - `wminfo`: what the last level's intermission shows and where it goes next.
   - `error`: why a level couldn't be loaded, if one couldn't.
+  - `menuactive`: the menu is up (the game shell keeps it; P\_Ticker stands still).
+  - `turbodetected`: who ran too fast since their last "is turbo!" turn (DOS v1.9).
+  - `skytexture`: the sky G\_InitNew chose (the texture number the renderer draws).
 
 -}
 type alias Game =
@@ -71,6 +75,7 @@ type alias Game =
     , singledemo : Bool
     , menuactive : Bool
     , turbodetected : Array Bool
+    , skytexture : Int
     , netdemo : Bool
     , state : GameState
     , action : GameAction
@@ -143,6 +148,7 @@ new wad data action =
     , singledemo = True
     , menuactive = False
     , turbodetected = Array.repeat Defs.maxPlayers False
+    , skytexture = 0
     , netdemo = False
     , state = DemoScreen
     , action = action
@@ -642,6 +648,9 @@ initNew skill episode0 map0 game =
         { game
             | paused = False
             , demoplayback = False
+
+            -- the sky is chosen here only (not when a level loads), as DOS v1.9 does
+            , skytexture = View.skyTexture game.data episode map
             , params =
                 { params
                     | skill = skill

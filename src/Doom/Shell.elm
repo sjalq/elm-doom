@@ -1400,7 +1400,7 @@ display m0 =
                 ( Level, Just env, Just rd ) ->
                     if gametic /= 0 then
                         let
-                            ( withView, mapped ) =
+                            ( withView, mapped, rd2 ) =
                                 if not automapActive then
                                     View.render rd
                                         env
@@ -1409,12 +1409,12 @@ display m0 =
                                         screen2
 
                                 else
-                                    ( screen2, [] )
+                                    ( screen2, [], rd )
 
                             world =
                                 markMapped mapped g.world
                         in
-                        ( { m2 | game = { g | world = world } }
+                        ( { m2 | game = { g | world = world }, renderData = Just rd2 }
                         , Messages.drawer env automapActive messages1 withView
                         )
 

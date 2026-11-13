@@ -29,7 +29,7 @@ type alias Options =
 
 {-| R\_RenderPlayerView: draw the view into its window; also the lines it drew walls for (for ML\_MAPPED).
 -}
-render : RenderData -> Env -> World -> Options -> Framebuffer -> ( Framebuffer, List LineId )
+render : RenderData -> Env -> World -> Options -> Framebuffer -> ( Framebuffer, List LineId, RenderData )
 render a0 a1 a2 a3 a4 =
     Debug.todo "Doom.Render.View.render"
 

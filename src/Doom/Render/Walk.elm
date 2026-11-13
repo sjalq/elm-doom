@@ -229,8 +229,11 @@ walk (RenderData static cache0) env world options =
                 params =
                     env.params
 
+                -- G_DoLoadLevel's Doom II rule also catches The Ultimate Doom: it
+                -- tests `gamemode == pack_plut`, a GameMission_t whose value is
+                -- retail's. Otherwise G_InitNew's sky for the episode stands.
                 skyName =
-                    if params.gameMode == Defs.Commercial then
+                    if params.gameMode == Defs.Commercial || params.gameMode == Defs.Retail then
                         if params.map < 12 then
                             "SKY1"
 

@@ -543,9 +543,26 @@ ticker ctx world0 wi0 =
                 ( { wi | cnt = cnt }, world, Continue )
 
 
+{-| S\_StartSound(NULL, sfx) for each, in order, each drawing its pitch variation
+from M\_Random then and there, as s\_sound.c does, between the intermission's own
+draws.
+-}
 playAll : List Sfx -> World -> World
 playAll sounds world =
-    List.foldl (\s w -> World.startSound Sound.Ambient s w) world sounds
+    List.foldl
+        (\sfx w ->
+            if Sound.drawsPitch sfx then
+                let
+                    ( byte, rng ) =
+                        Random.mRandom w.rng
+                in
+                { w | rng = rng, sounds = Sound.StartDrawn Sound.Ambient sfx byte :: w.sounds }
+
+            else
+                { w | sounds = Sound.StartDrawn Sound.Ambient sfx 0 :: w.sounds }
+        )
+        world
+        sounds
 
 
 {-| WI\_checkForAccelerate: a fresh press of attack or use by anyone hurries things on.

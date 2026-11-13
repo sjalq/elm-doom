@@ -88,7 +88,7 @@ def norm_sounds(text):
             playing = name
             out.append("%s music %s %s" % (parts[0], name, parts[3] if len(parts) > 3 else "1"))
         elif len(parts) >= 3:
-            out.append("%s sfx %s" % (parts[0], parts[2].lower()))
+            out.append(" ".join([parts[0], "sfx", parts[2].lower()] + parts[3:4]))
     return out
 
 

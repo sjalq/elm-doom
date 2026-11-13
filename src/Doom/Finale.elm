@@ -9,6 +9,7 @@ tiled flat, then the art screens (Doom 1's last pictures, the bunny scroll and "
 END" after episode 3), and Doom II's cast call.
 
 Sounds have no origin (S\_StartSound(NULL, ...)): a host plays them as menu sounds.
+Each draws its pitch variation from M\_Random as it starts (`StartDrawn`).
 The bunny scroll's pistol shots are made by F\_BunnyScroll, which is drawing code in
 the original; here the ticker makes them, on the same tics, since the original draws
 once per tic.
@@ -27,6 +28,7 @@ import Doom.Info.MobjType as MobjType exposing (MobjType)
 import Doom.Info.Sfx as Sfx exposing (Sfx)
 import Doom.Info.Sprite as Sprite
 import Doom.Info.State as State exposing (State)
+import Doom.Random as Random exposing (Rng)
 import Doom.Render.SpriteFrames as SpriteFrames
 import Doom.Sound as Sound
 import Doom.Video as Video exposing (Framebuffer, Patch)
@@ -73,16 +75,37 @@ type alias CastState =
     }
 
 
-{-| What a tic did: the new state, the sounds it started, whether the game moves on
-to the next level (`gameaction = ga_worlddone`, Doom II after a button press), and
-whether the screen should melt to the next picture (`wipegamestate = -1`).
+{-| What a tic did: the new state, the sounds it started (each `StartDrawn`, its
+pitch variation already drawn), the M\_Random state after those draws, whether the
+game moves on to the next level (`gameaction = ga_worlddone`, Doom II after a button
+press), and whether the screen should melt to the next picture (`wipegamestate =
+-1`).
 -}
 type alias Tick =
     { model : Model
     , sounds : List Sound.Event
+    , rng : Rng
     , worldDone : Bool
     , wipe : Bool
     }
+
+
+{-| S\_StartSound(NULL, sfx) for each, in order: s\_sound.c draws each one's pitch
+variation from M\_Random as it starts it.
+-}
+startSounds : List Sfx -> Rng -> ( List Sound.Event, Rng )
+startSounds sounds rng0 =
+    List.foldl
+        (\sfx ( acc, rng ) ->
+            if Sound.drawsPitch sfx then
+                Random.mRandom rng |> Tuple.mapFirst (\byte -> Sound.StartDrawn Sound.Ambient sfx byte :: acc)
+
+            else
+                ( Sound.StartDrawn Sound.Ambient sfx 0 :: acc, rng )
+        )
+        ( [], rng0 )
+        sounds
+        |> Tuple.mapFirst List.reverse
 
 
 {-| A music lump and whether it loops.
@@ -217,18 +240,35 @@ textWait =
 {-| F\_Ticker, given whether any player's ticcmd has a button pressed. In Doom II,
 after 50 tics a button moves on: to the cast after MAP30 (again on every tic it is
 held), to the next level otherwise. In Doom 1 the text gives way to the art screen
-once it has all been typed and read.
+once it has all been typed and read. The sounds it starts draw from M\_Random
+(`rng`, `rndindex`) for their pitch.
 -}
-ticker : Bool -> Model -> Tick
-ticker anyButton model =
+ticker : Bool -> Rng -> Model -> Tick
+ticker anyButton rng model =
     let
         t =
             step anyButton model
 
         (Model m) =
             t.model
+
+        ( sounds, rngOut ) =
+            startSounds t.sfx rng
     in
-    { t | model = Model { m | wipe = t.wipe } }
+    { model = Model { m | wipe = t.wipe }
+    , sounds = sounds
+    , rng = rngOut
+    , worldDone = t.worldDone
+    , wipe = t.wipe
+    }
+
+
+type alias Step =
+    { model : Model
+    , sfx : List Sfx
+    , worldDone : Bool
+    , wipe : Bool
+    }
 
 
 {-| Whether the last tic asked for the screen to melt (`wipegamestate = -1`): when
@@ -239,7 +279,7 @@ wipeRequested (Model m) =
     m.wipe
 
 
-step : Bool -> Model -> Tick
+step : Bool -> Model -> Step
 step anyButton (Model m0) =
     let
         skipping =
@@ -266,17 +306,17 @@ step anyButton (Model m0) =
                     castTicker cast
             in
             { model = Model { m | stage = Cast next }
-            , sounds = List.map (Sound.Start Sound.Ambient) sounds
+            , sfx = sounds
             , worldDone = worldDone
             , wipe = castWipe
             }
 
         Text ->
             if m.gameMode /= Commercial && m.count > String.length m.text * textSpeed + textWait then
-                { model = Model { m | count = 0, stage = Art }, sounds = [], worldDone = worldDone, wipe = True }
+                { model = Model { m | count = 0, stage = Art }, sfx = [], worldDone = worldDone, wipe = True }
 
             else
-                { model = Model m, sounds = [], worldDone = worldDone, wipe = castWipe }
+                { model = Model m, sfx = [], worldDone = worldDone, wipe = castWipe }
 
         Art ->
             let
@@ -284,7 +324,7 @@ step anyButton (Model m0) =
                     bunnySounds m
             in
             { model = Model { m | laststage = laststage }
-            , sounds = List.map (Sound.Start Sound.Ambient) sounds
+            , sfx = sounds
             , worldDone = worldDone
             , wipe = False
             }
@@ -590,10 +630,24 @@ attackSound st =
 
 {-| F\_Responder: during the cast, a key press kills the monster on show (and is
 eaten, as is every key press while it dies). Nothing when the finale doesn't take the
-event.
+event. The death sound draws from M\_Random for its pitch, so the M\_Random state goes
+in and comes back.
 -}
-responder : Event -> Model -> Maybe ( Model, List Sound.Event )
-responder event (Model m) =
+responder : Event -> Rng -> Model -> Maybe ( Model, List Sound.Event, Rng )
+responder event rng model =
+    respond event model
+        |> Maybe.map
+            (\( m, sfx ) ->
+                let
+                    ( sounds, rngOut ) =
+                        startSounds sfx rng
+                in
+                ( m, sounds, rngOut )
+            )
+
+
+respond : Event -> Model -> Maybe ( Model, List Sfx )
+respond event (Model m) =
     case ( m.stage, event ) of
         ( Cast cast, KeyDown _ ) ->
             if cast.castdeath then
@@ -621,7 +675,7 @@ responder event (Model m) =
                                     }
                         }
                     , if info.deathsound /= Sfx.None then
-                        [ Sound.Start Sound.Ambient info.deathsound ]
+                        [ info.deathsound ]
 
                       else
                         []

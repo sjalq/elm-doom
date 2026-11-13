@@ -57,8 +57,9 @@ marker =
     0x80
 
 
-{-| Read a demo lump or file. Versions 109 (Doom 1.9, which Freedoom's demos are) and
-110 (linuxdoom-1.10) play the same; others are refused, as G\_DoPlayDemo does.
+{-| Read a demo lump or file. Only version 109 demos (Doom 1.9, which Freedoom's demos
+are) are played, as by the DOS v1.9 executable's G\_DoPlayDemo (chocolate-doom
+g\_game.c); linuxdoom-1.10 wanted 110 instead.
 -}
 fromBytes : Bytes -> Result String Demo
 fromBytes bytes =
@@ -69,7 +70,7 @@ fromBytes bytes =
         Just all ->
             case all of
                 version :: skill :: episode :: map :: deathmatch :: respawn :: fast :: nomonsters :: console :: p0 :: p1 :: p2 :: p3 :: rest ->
-                    if version /= 109 && version /= 110 then
+                    if version /= 109 then
                         Err ("Demo is from a different game version! (version " ++ String.fromInt version ++ ")")
 
                     else

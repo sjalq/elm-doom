@@ -28,6 +28,14 @@
 # oracle_main.c).
 #
 # Changes, by kind (details at each DOOM-ORACLE comment):
+#  - DOS behaviour: where DOS v1.9 differs from linuxdoom-1.10, the oracle
+#    does what DOS does, as chocolate-doom reproduces it, and so does the Elm
+#    port (marked "DOOM-ORACLE: DOS behaviour (see chocolate-doom ...)"):
+#    the spechit and intercepts overruns (p_map.c, p_maputl.c),
+#    P_FindNextHighestFloor's overflow and EV_DoDonut's NULL-sector reads
+#    (p_spec.c), stair steps' unset crush (p_floor.c), the retail switch
+#    list (p_switch.c), REJECT padding (p_setup.c), EV_VerticalDoor on a
+#    non-door thinker (p_doors.c).
 #  - platform: i_headless.c (frames to the -frames dump, sound calls to
 #    the -soundlog, deterministic I_GetTime and I_SoundIsPlaying, no net,
 #    I_Quit exits 0), oracle_main.c driver, -iwad and game mode from the

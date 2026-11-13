@@ -1,3 +1,9 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below).
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - EV_BuildStairs: a step's unset type/crush as in DOS (crush 10).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -502,6 +508,11 @@ EV_BuildStairs
 	floor->speed = speed;
 	height = sec->floorheight + stairsize;
 	floor->floordestheight = height;
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom p_floor.c:
+	// EV_BuildStairs): type and crush are never set; in DOS crush holds
+	// neither 0 nor 1 (STAIRS_UNINITIALIZED_CRUSH_FIELD_VALUE).
+	floor->type = lowerFloor;
+	floor->crush = 10;
 		
 	texture = sec->floorpic;
 	
@@ -545,6 +556,9 @@ EV_BuildStairs
 		floor->sector = sec;
 		floor->speed = speed;
 		floor->floordestheight = height;
+		// DOOM-ORACLE: DOS behaviour, as above.
+		floor->type = lowerFloor;
+		floor->crush = 10;
 		ok = 1;
 		break;
 	    }

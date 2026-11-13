@@ -1033,10 +1033,13 @@ finaleTicker finale game =
             Array.toList game.world.players |> List.any (\p -> p.cmd.buttons /= 0)
 
         t =
-            Finale.ticker anyButton finale
+            Finale.ticker anyButton game.world.rng finale
+
+        w0 =
+            game.world
 
         world =
-            List.foldl (\s w -> { w | sounds = s :: w.sounds }) game.world t.sounds
+            List.foldl (\s w -> { w | sounds = s :: w.sounds }) { w0 | rng = t.rng } t.sounds
     in
     { game
         | state = Finale t.model

@@ -3,6 +3,12 @@
 //  - linespeciallist[] has room past MAXLINEANIMS (64) and an overflow is
 //    reported on stderr (Oracle_Overflow), as for spechit in p_map.c.
 
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - P_FindNextHighestFloor without linuxdoom's stop at 20 (DOS overflow:
+//    22nd overwrites height, 23rd crashes); EV_DoDonut with DOS's reads
+//    through a NULL ring/back sector, see chocolate-doom.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -343,7 +349,11 @@ P_FindNextHighestFloor
     fixed_t		height = currentheight;
 
     
-    fixed_t		heightlist[MAX_ADJOINING_SECTORS];		
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom p_spec.c:
+    // P_FindNextHighestFloor). DOS has no limit check: heightlist[20] is
+    // written harmlessly, heightlist[21] overwrites `height`, a 23rd entry
+    // crashes. linuxdoom-1.10 stopped after 20 entries instead.
+    fixed_t		heightlist[MAX_ADJOINING_SECTORS + 2];
 
     for (i=0, h=0 ;i < sec->linecount ; i++)
     {
@@ -354,14 +364,13 @@ P_FindNextHighestFloor
 	    continue;
 	
 	if (other->floorheight > height)
-	    heightlist[h++] = other->floorheight;
-
-	// Check for overflow. Exit.
-	if ( h >= MAX_ADJOINING_SECTORS )
 	{
-	    fprintf( stderr,
-		     "Sector with more than 20 adjoining sectors\n" );
-	    break;
+	    if (h == MAX_ADJOINING_SECTORS + 1)
+		height = other->floorheight;
+	    else if (h == MAX_ADJOINING_SECTORS + 2)
+		I_Error ("Sector with more than 22 adjoining sectors. "
+			 "Vanilla will crash here");
+	    heightlist[h++] = other->floorheight;
 	}
     }
     
@@ -1187,12 +1196,30 @@ int EV_DoDonut(line_t*	line)
 			
 	rtn = 1;
 	s2 = getNextSector(s1->lines[0],s1);
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom p_spec.c:EV_DoDonut,
+	// DonutOverrun): no ring (one-sided first line) stops the search; a
+	// one-sided ring line reads the "sector" at address 0, floor height 0
+	// and flat 0x16 (linuxdoom-1.10 dereferenced NULL in both cases).
+	if (s2 == NULL)
+	    break;
 	for (i = 0;i < s2->linecount;i++)
 	{
+	    fixed_t	s3_floorheight;
+	    short	s3_floorpic;
 	    if ((!s2->lines[i]->flags & ML_TWOSIDED) ||
 		(s2->lines[i]->backsector == s1))
 		continue;
 	    s3 = s2->lines[i]->backsector;
+	    if (s3 == NULL)
+	    {
+		s3_floorheight = 0x00000000;	// DONUT_FLOORHEIGHT_DEFAULT
+		s3_floorpic = 0x16;		// DONUT_FLOORPIC_DEFAULT
+	    }
+	    else
+	    {
+		s3_floorheight = s3->floorheight;
+		s3_floorpic = s3->floorpic;
+	    }
 	    
 	    //	Spawn rising slime
 	    floor = Z_Malloc (sizeof(*floor), PU_LEVSPEC, 0);
@@ -1204,9 +1231,9 @@ int EV_DoDonut(line_t*	line)
 	    floor->direction = 1;
 	    floor->sector = s2;
 	    floor->speed = FLOORSPEED / 2;
-	    floor->texture = s3->floorpic;
+	    floor->texture = s3_floorpic;
 	    floor->newspecial = 0;
-	    floor->floordestheight = s3->floorheight;
+	    floor->floordestheight = s3_floorheight;
 	    
 	    //	Spawn lowering donut-hole
 	    floor = Z_Malloc (sizeof(*floor), PU_LEVSPEC, 0);
@@ -1218,7 +1245,7 @@ int EV_DoDonut(line_t*	line)
 	    floor->direction = -1;
 	    floor->sector = s1;
 	    floor->speed = FLOORSPEED / 2;
-	    floor->floordestheight = s3->floorheight;
+	    floor->floordestheight = s3_floorheight;
 	    break;
 	}
     }

@@ -55,7 +55,7 @@ teleportMove env id x y world =
                     started.scratch.tmbbox
 
                 ( ok, stomped ) =
-                    eachCell (thingCells env bbox)
+                    eachCell (thingCells env started bbox)
                         (\bx by -> MapUtil.blockThingsIterator env bx by (stompThing env))
                         started
             in
@@ -139,7 +139,7 @@ checkPosition env id x y world =
                     -- overlap the next cells by up to MAXRADIUS, so the box is grown
                     -- by that much to look for them.
                     ( thingsOk, afterThings ) =
-                        eachCell (thingCells env bbox)
+                        eachCell (thingCells env started bbox)
                             (\bx by -> MapUtil.blockThingsIterator env bx by (checkThing env))
                             started
                 in
@@ -147,7 +147,7 @@ checkPosition env id x y world =
                     ( False, afterThings )
 
                 else
-                    eachCell (lineCells env bbox)
+                    eachCell (lineCells env afterThings bbox)
                         (\bx by -> MapUtil.blockLinesIterator env bx by (checkLine env))
                         afterThings
 
@@ -324,7 +324,12 @@ missileDamage env thing tm world =
 
 Special lines are noted in the order found, not the order they would be crossed in.
 The C source keeps at most MAXSPECIALCROSS (8) and writes past its array beyond that;
-here there is no limit.
+here the list has no limit, and the 9th to 14th line overwrite what the DOS executable
+has after the array, as chocolate-doom p\_map.c:SpechitOverrun reproduces: the four
+`tmbbox` values (top, bottom, left, right), then `crushchange`, then `nofit`, each
+set to the line's address in doom2.exe's memory, DEFAULT\_SPECHIT\_MAGIC (0x01C09C98)
+plus 0x3E (sizeof line\_t) per line number. Later lines of the same check see the
+changed `tmbbox`.
 
 -}
 checkLine : Env -> LineId -> World -> ( Bool, World )
@@ -404,13 +409,51 @@ checkLine env lineId world =
                                 raised
                     in
                     if special /= 0 then
-                        { dropped | spechit = dropped.spechit ++ [ lineId ] }
+                        spechitOverrun lineId { dropped | spechit = dropped.spechit ++ [ lineId ] }
 
                     else
                         dropped
                 )
                 opened
             )
+
+
+{-| chocolate-doom p\_map.c:SpechitOverrun, after `spechit[numspechit++] = ld`.
+-}
+spechitOverrun : LineId -> World.Scratch -> World.Scratch
+spechitOverrun lineId s =
+    let
+        numspechit =
+            List.length s.spechit
+
+        addr =
+            Int32.wrap (0x01C09C98 + lineId * 0x3E)
+
+        box =
+            s.tmbbox
+    in
+    case numspechit of
+        9 ->
+            { s | tmbbox = { box | top = addr } }
+
+        10 ->
+            { s | tmbbox = { box | bottom = addr } }
+
+        11 ->
+            { s | tmbbox = { box | left = addr } }
+
+        12 ->
+            { s | tmbbox = { box | right = addr } }
+
+        13 ->
+            -- a nonzero int in a boolean
+            { s | crushchange = True }
+
+        14 ->
+            { s | nofit = True }
+
+        _ ->
+            s
 
 
 {-| P\_TryMove thing x y.
@@ -1390,7 +1433,7 @@ radiusAttack env spotId source damage world =
         Just spot ->
             let
                 bm =
-                    env.level.blockmap
+                    MapUtil.blockmap env world
 
                 -- (damage + MAXRADIUS) << FRACBITS: MAXRADIUS is already fixed-point,
                 -- so it overflows out, as in the C source.
@@ -1619,23 +1662,23 @@ eachCell cells f world =
 {-| The cells to look for things touching the box in (x outer, y inner), the box grown
 by MAXRADIUS.
 -}
-thingCells : Env -> Level.Box -> List ( Int, Int )
-thingCells env bbox =
-    boxCells env bbox Defs.maxRadius
+thingCells : Env -> World -> Level.Box -> List ( Int, Int )
+thingCells env world bbox =
+    boxCells env world bbox Defs.maxRadius
 
 
 {-| The cells to look for lines touching the box in.
 -}
-lineCells : Env -> Level.Box -> List ( Int, Int )
-lineCells env bbox =
-    boxCells env bbox 0
+lineCells : Env -> World -> Level.Box -> List ( Int, Int )
+lineCells env world bbox =
+    boxCells env world bbox 0
 
 
-boxCells : Env -> Level.Box -> Fixed -> List ( Int, Int )
-boxCells env bbox margin =
+boxCells : Env -> World -> Level.Box -> Fixed -> List ( Int, Int )
+boxCells env world bbox margin =
     let
         bm =
-            env.level.blockmap
+            MapUtil.blockmap env world
 
         cell v org extra =
             Int32.shiftRight Defs.mapBlockShift (Int32.add (Int32.sub v org) extra)

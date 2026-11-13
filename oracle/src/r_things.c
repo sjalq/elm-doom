@@ -416,7 +416,10 @@ R_DrawVisSprite
     }
     else if (vis->mobjflags & MF_TRANSLATION)
     {
-	colfunc = R_DrawTranslatedColumn;
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom
+	// r_things.c:R_DrawVisSprite): transcolfunc, the low detail one in low
+	// detail (linuxdoom called R_DrawTranslatedColumn directly).
+	colfunc = transcolfunc;
 	dc_translation = translationtables - 256 +
 	    ( (vis->mobjflags & MF_TRANSLATION) >> (MF_TRANSSHIFT-8) );
     }

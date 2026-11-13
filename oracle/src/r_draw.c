@@ -237,10 +237,15 @@ void R_DrawColumnLow (void)
     //	dccount++; 
 #endif 
     // Blocky mode, need to multiply by 2.
-    dc_x <<= 1;
-    
-    dest = ylookup[dc_yl] + columnofs[dc_x];
-    dest2 = ylookup[dc_yl] + columnofs[dc_x+1];
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom r_draw.c:R_DrawColumnLow):
+    // the column is doubled into a local; linuxdoom's `dc_x <<= 1` left the
+    // global doubled for the masked drawers' following posts and loops.
+    {
+    int x = dc_x << 1;
+
+    dest = ylookup[dc_yl] + columnofs[x];
+    dest2 = ylookup[dc_yl] + columnofs[x+1];
+    }
     
     fracstep = dc_iscale; 
     frac = dc_texturemid + (dc_yl-centery)*fracstep;
@@ -445,10 +450,93 @@ void R_DrawTranslatedColumn (void)
 	//  is mapped to gray, red, black/indigo. 
 	*dest = dc_colormap[dc_translation[dc_source[frac>>FRACBITS]]];
 	dest += SCREENWIDTH;
-	
-	frac += fracstep; 
-    } while (count--); 
-} 
+
+	frac += fracstep;
+    } while (count--);
+}
+
+
+// DOOM-ORACLE: DOS behaviour (see chocolate-doom
+// r_draw.c:R_DrawFuzzColumnLow, R_DrawTranslatedColumnLow): low detail
+// draws shadows and translated sprites two screen columns wide too.
+// linuxdoom used the one-column high-detail functions in low detail.
+void R_DrawFuzzColumnLow (void)
+{
+    int			count;
+    byte*		dest;
+    byte*		dest2;
+    int			x;
+
+    if (!dc_yl)
+	dc_yl = 1;
+    if (dc_yh == viewheight-1)
+	dc_yh = viewheight - 2;
+
+    count = dc_yh - dc_yl;
+    if (count < 0)
+	return;
+
+    x = dc_x << 1;
+#ifdef RANGECHECK
+    if ((unsigned)x >= SCREENWIDTH
+	|| dc_yl < 0 || dc_yh >= SCREENHEIGHT)
+    {
+	I_Error ("R_DrawFuzzColumn: %i to %i at %i",
+		 dc_yl, dc_yh, dc_x);
+    }
+#endif
+    dest = ylookup[dc_yl] + columnofs[x];
+    dest2 = ylookup[dc_yl] + columnofs[x+1];
+
+    do
+    {
+	*dest = colormaps[6*256+dest[fuzzoffset[fuzzpos]]];
+	*dest2 = colormaps[6*256+dest2[fuzzoffset[fuzzpos]]];
+	if (++fuzzpos == FUZZTABLE)
+	    fuzzpos = 0;
+	dest += SCREENWIDTH;
+	dest2 += SCREENWIDTH;
+    } while (count--);
+}
+
+void R_DrawTranslatedColumnLow (void)
+{
+    int			count;
+    byte*		dest;
+    byte*		dest2;
+    fixed_t		frac;
+    fixed_t		fracstep;
+    int			x;
+
+    count = dc_yh - dc_yl;
+    if (count < 0)
+	return;
+
+    x = dc_x << 1;
+#ifdef RANGECHECK
+    if ((unsigned)x >= SCREENWIDTH
+	|| dc_yl < 0
+	|| dc_yh >= SCREENHEIGHT)
+    {
+	I_Error ( "R_DrawColumn: %i to %i at %i",
+		  dc_yl, dc_yh, x);
+    }
+#endif
+    dest = ylookup[dc_yl] + columnofs[x];
+    dest2 = ylookup[dc_yl] + columnofs[x+1];
+
+    fracstep = dc_iscale;
+    frac = dc_texturemid + (dc_yl-centery)*fracstep;
+
+    do
+    {
+	*dest = dc_colormap[dc_translation[dc_source[frac>>FRACBITS]]];
+	*dest2 = dc_colormap[dc_translation[dc_source[frac>>FRACBITS]]];
+	dest += SCREENWIDTH;
+	dest2 += SCREENWIDTH;
+	frac += fracstep;
+    } while (count--);
+}
 
 
 
@@ -542,29 +630,33 @@ void R_DrawSpan (void)
 #endif 
 
     
-    xfrac = ds_xfrac; 
-    yfrac = ds_yfrac; 
-	 
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom r_draw.c:R_DrawSpan):
+    // the DOS assembler steps u and v packed into one 32-bit word (6.10 v
+    // below 6.10 u), so a carry out of v reaches u. linuxdoom stepped them
+    // as two separate fixed-point numbers.
+    {
+    unsigned int position, step, xtemp, ytemp;
+
+    position = ((ds_xfrac << 10) & 0xffff0000)
+             | ((ds_yfrac >> 6)  & 0x0000ffff);
+    step = ((ds_xstep << 10) & 0xffff0000)
+         | ((ds_ystep >> 6)  & 0x0000ffff);
+
     dest = ylookup[ds_y] + columnofs[ds_x1];
 
-    // We do not check for zero spans here?
-    count = ds_x2 - ds_x1; 
+    count = ds_x2 - ds_x1;
 
-    do 
+    do
     {
-	// Current texture index in u,v.
-	spot = ((yfrac>>(16-6))&(63*64)) + ((xfrac>>16)&63);
-
-	// Lookup pixel from flat texture tile,
-	//  re-index using light/colormap.
+	ytemp = (position >> 4) & 0x0fc0;
+	xtemp = (position >> 26);
+	spot = xtemp | ytemp;
 	*dest++ = ds_colormap[ds_source[spot]];
-
-	// Next step in u,v.
-	xfrac += ds_xstep; 
-	yfrac += ds_ystep;
-	
-    } while (count--); 
-} 
+	position += step;
+    } while (count--);
+    }
+    (void) xfrac; (void) yfrac;
+}
 
 
 
@@ -664,29 +756,36 @@ void R_DrawSpanLow (void)
 //	dscount++; 
 #endif 
 	 
-    xfrac = ds_xfrac; 
-    yfrac = ds_yfrac; 
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom r_draw.c:R_DrawSpanLow):
+    // the packed u/v stepping of R_DrawSpan, and the count taken before the
+    // span is doubled (linuxdoom counted after, drawing twice the span's
+    // length and running on past its end).
+    {
+    unsigned int position, step, xtemp, ytemp;
+
+    position = ((ds_xfrac << 10) & 0xffff0000)
+             | ((ds_yfrac >> 6)  & 0x0000ffff);
+    step = ((ds_xstep << 10) & 0xffff0000)
+         | ((ds_ystep >> 6)  & 0x0000ffff);
+
+    count = ds_x2 - ds_x1;
 
     // Blocky mode, need to multiply by 2.
     ds_x1 <<= 1;
     ds_x2 <<= 1;
-    
-    dest = ylookup[ds_y] + columnofs[ds_x1];
-  
-    
-    count = ds_x2 - ds_x1; 
-    do 
-    { 
-	spot = ((yfrac>>(16-6))&(63*64)) + ((xfrac>>16)&63);
-	// Lowres/blocky mode does it twice,
-	//  while scale is adjusted appropriately.
-	*dest++ = ds_colormap[ds_source[spot]]; 
-	*dest++ = ds_colormap[ds_source[spot]];
-	
-	xfrac += ds_xstep; 
-	yfrac += ds_ystep; 
 
-    } while (count--); 
+    dest = ylookup[ds_y] + columnofs[ds_x1];
+    do
+    {
+	ytemp = (position >> 4) & 0x0fc0;
+	xtemp = (position >> 26);
+	spot = xtemp | ytemp;
+	*dest++ = ds_colormap[ds_source[spot]];
+	*dest++ = ds_colormap[ds_source[spot]];
+	position += step;
+    } while (count--);
+    }
+    (void) xfrac; (void) yfrac;
 }
 
 //

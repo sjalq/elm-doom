@@ -54,6 +54,7 @@ type alias Opts =
     , last : Int
     , border : Bool
     , tics : List Int
+    , sky : Maybe Int
     }
 
 
@@ -98,7 +99,7 @@ run env =
         wadPath :: demo :: out :: rest ->
             let
                 opts =
-                    parse rest { blocks = 9, detail = 0, raw = Nothing, first = 0, every = 1, last = 1000000000, border = False, tics = [] }
+                    parse rest { blocks = 9, detail = 0, raw = Nothing, first = 0, every = 1, last = 1000000000, border = False, tics = [], sky = Nothing }
             in
             FileSystem.readFile (Path.fromPosixString wadPath)
                 |> Task.mapError FileSystem.errorToString
@@ -199,6 +200,11 @@ loop env out opts0 opts game rd fb tic raw ( drawn, drawMs ) =
                 loop env out opts0 opts next rd fb gametic raw ( drawn, drawMs )
 
             Just ( gameEnv, world ) ->
+                let
+                    -- G_InitNew's sky: the level the demo starts on
+                    sky =
+                        Maybe.withDefault (View.skyTexture gameEnv.data gameEnv.params.episode gameEnv.params.map) opts.sky
+                in
                 Time.now
                     |> Task.andThen
                         (\t0 ->
@@ -211,7 +217,7 @@ loop env out opts0 opts game rd fb tic raw ( drawn, drawMs ) =
                                         fb
 
                                 ( fb2, _, rd2 ) =
-                                    View.render rd gameEnv world { screenblocks = opts.blocks, detailshift = opts.detail, player = Game.consolePlayer next } bordered
+                                    View.render rd gameEnv world { screenblocks = opts.blocks, detailshift = opts.detail, player = Game.consolePlayer next, skytexture = sky } bordered
 
                                 screen =
                                     Video.toBytes fb2
@@ -246,7 +252,7 @@ loop env out opts0 opts game rd fb tic raw ( drawn, drawMs ) =
                                                 else
                                                     Task.succeed ()
                                         in
-                                        png |> Task.andThen (\_ -> loop env out opts0 opts next rd2 fb2 gametic raw2 ( drawn + 1, ms ))
+                                        png |> Task.andThen (\_ -> loop env out opts0 { opts | sky = Just sky } next rd2 fb2 gametic raw2 ( drawn + 1, ms ))
                                     )
                         )
 

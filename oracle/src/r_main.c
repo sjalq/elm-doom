@@ -709,8 +709,11 @@ void R_ExecuteSetViewSize (void)
     else
     {
 	colfunc = basecolfunc = R_DrawColumnLow;
-	fuzzcolfunc = R_DrawFuzzColumn;
-	transcolfunc = R_DrawTranslatedColumn;
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom
+	// r_main.c:R_ExecuteSetViewSize): the low detail fuzz and
+	// translation drawers (linuxdoom kept the high-detail ones).
+	fuzzcolfunc = R_DrawFuzzColumnLow;
+	transcolfunc = R_DrawTranslatedColumnLow;
 	spanfunc = R_DrawSpanLow;
     }
 

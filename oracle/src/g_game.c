@@ -477,9 +477,12 @@ void G_DoLoadLevel (void)
 
     // DOOM determines the sky texture to be used
     // depending on the current episode, and the game version.
-    if ( (gamemode == commercial)
-	 || ( gamemode == pack_tnt )
-	 || ( gamemode == pack_plut ) )
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_DoLoadLevel):
+    // v1.9 sets the sky only in G_InitNew (by episode; Doom II by the map a
+    // game starts on: "the sky never changes in Doom II"). linuxdoom's
+    // G_DoLoadLevel reset it by map, and its `gamemode == pack_plut` (a
+    // GameMission_t equal to retail) took The Ultimate Doom along.
+    if (0)
     {
 	skytexture = R_TextureNumForName ("SKY3");
 	if (gamemap < 12)

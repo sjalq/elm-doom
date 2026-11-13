@@ -1,7 +1,7 @@
 module AutomapCheck exposing (main)
 
 {-| Automap frames from the real game, to compare with the C automap pixel for pixel.
-Plays a demo through the `Doom` TEA API and, after each level tic, runs a script
+Plays a demo through `Doom.Game` and, after each level tic, runs a script
 of automap events, then `Doom.Automap.ticker`, and writes the screen
 (`OUTDIR/amNNNNN.raw`, 64000 bytes, rows 0 to 167 drawn by the automap) at the tics
 asked for.
@@ -18,13 +18,17 @@ console player's computer map power), `T dump`. The C harness made from
 import Array
 import Bytes
 import Bytes.Decode
-import Doom
 import Doom.Automap as Automap
+import Doom.Data.Load as DataLoad
 import Doom.Defs as Defs
+import Doom.Demo as Demo
 import Doom.Event exposing (Event(..))
 import Doom.Flags as Flags
+import Doom.Game as Game exposing (Game)
 import Doom.Player as Player
+import Doom.Ticcmd as Ticcmd
 import Doom.Video as Video
+import Doom.Wad as Wad exposing (Wad)
 import Doom.World as World exposing (World)
 import FileSystem
 import Path
@@ -79,8 +83,8 @@ run env =
                 |> Task.mapError FileSystem.errorToString
                 |> Task.andThen
                     (\( bytes, scriptBytes ) ->
-                        case Doom.start (Doom.Demo demo) bytes of
-                            Ok model ->
+                        case setup demo bytes of
+                            Ok ( wad, model ) ->
                                 let
                                     script =
                                         scriptBytes
@@ -91,7 +95,7 @@ run env =
                                     last =
                                         script |> List.map .tic |> List.maximum |> Maybe.withDefault 0
                                 in
-                                loop env out script last -1 { mapped = False, allmap = Nothing } (Automap.init (Doom.wad model)) model
+                                loop env out script last -1 { mapped = False, allmap = Nothing } (Automap.init wad) model
 
                             Err e ->
                                 Task.fail e
@@ -102,6 +106,19 @@ run env =
             say env "usage: automap-check WAD DEMO SCRIPT OUTDIR"
 
 
+{-| The WAD and a game playing the demo lump.
+-}
+setup : String -> Bytes.Bytes -> Result String ( Wad, Game )
+setup demo bytes =
+    Wad.fromBytes bytes
+        |> Result.andThen
+            (\wad ->
+                Result.map2 (\data d -> ( wad, Game.new wad data (Game.playDemo d) ))
+                    (DataLoad.fromWad wad)
+                    (Wad.lump demo wad |> Result.fromMaybe ("no lump " ++ demo) |> Result.andThen Demo.fromBytes)
+            )
+
+
 say : System.Environment -> String -> Task x ()
 say env msg =
     Stream.logLine msg env.stdout
@@ -110,15 +127,19 @@ say env msg =
 {-| One game tic at a time; after a tic that advanced leveltime, the script's events
 for it, then the automap's ticker, then the dumps.
 -}
-loop : System.Environment -> String -> List Command -> Int -> Int -> Overlay -> Automap.Model -> Doom.Model -> Task String ()
+loop : System.Environment -> String -> List Command -> Int -> Int -> Overlay -> Automap.Model -> Game -> Task String ()
 loop env out script last lastLeveltime overlay am model =
     let
         next =
-            Tuple.first (Doom.update (Doom.Tick Doom.msPerTic) model)
+            Tuple.first (Game.tick (Array.repeat 4 Ticcmd.empty) model)
     in
-    case Doom.playing next of
+    case Game.playing next of
         Nothing ->
-            loop env out script last lastLeveltime overlay am next
+            if next.demo == Nothing || next.error /= Nothing then
+                Task.succeed ()
+
+            else
+                loop env out script last lastLeveltime overlay am next
 
         Just ( gameEnv, world0 ) ->
             let
@@ -162,7 +183,7 @@ loop env out script last lastLeveltime overlay am model =
 
                     -- P_KillMobj stops the automap when the console player dies.
                     amAlive =
-                        case Doom.playing model of
+                        case Game.playing model of
                             Just ( _, before ) ->
                                 Automap.stopOnDeath before world0 player am
 

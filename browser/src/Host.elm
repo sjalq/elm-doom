@@ -19,9 +19,9 @@ import Json.Decode
 import Json.Encode as E
 
 
-{-| A frame for `host.js`'s `frame` port: the 64000 palette indices as a JavaScript
-array (`Doom.Video.toArray`, encoded element by element: about a millisecond, where
-going through `Doom.Video.toBytes` took six).
+{-| A frame for `host.js`'s `frame` port: the 320 columns of 200 palette indices as
+JavaScript arrays (`Doom.Video.columns`), which crosses the port in about a
+millisecond, where going through `Doom.Video.toBytes` took six.
 -}
 encodeFrame : Framebuffer -> Int -> Int -> E.Value
 encodeFrame pixels palette gamma =
@@ -41,7 +41,7 @@ encodeScreen screen =
 
 packed : Framebuffer -> E.Value
 packed pixels =
-    E.array E.int (Video.toArray pixels)
+    E.array (E.array E.int) (Video.columns pixels)
 
 
 {-| Audio commands for the `audio` port. `PlayMusic` carries the song, decoded

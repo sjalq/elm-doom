@@ -117,11 +117,14 @@ export class Screen {
     return lut;
   }
 
-  // pixels: 64000 palette indices, an array of numbers or a typed array
+  // pixels: 320 columns, left to right, of 200 palette indices from the top
   draw(pixels, palette, gamma) {
     const lut = this.lut(palette, gamma);
     const rgba = this.rgba;
-    for (let i = 0; i < 64000; i++) rgba[i] = lut[pixels[i]];
+    for (let x = 0; x < 320; x++) {
+      const col = pixels[x];
+      for (let y = 0, o = x; y < 200; y++, o += 320) rgba[o] = lut[col[y]];
+    }
     this.ctx.putImageData(this.image, 0, 0);
   }
 }

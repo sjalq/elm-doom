@@ -798,8 +798,10 @@ musicNames =
         , "countd"
         , "betwee"
         , "doom"
+        , "the_da"
         , "shawn"
         , "ddtblu"
+        , "in_cit"
         , "dead"
         , "stlks2"
         , "theda2"
@@ -823,6 +825,7 @@ musicNames =
         , "openin"
         , "evil"
         , "ultima"
+        , "read_m"
         , "dm2ttl"
         , "dm2int"
         ]

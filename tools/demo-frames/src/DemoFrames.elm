@@ -1,29 +1,43 @@
 module DemoFrames exposing (main)
 
-{-| Frames from the real game: plays a demo through the `Doom` TEA API and writes
-PNGs of the console player's view at the tics asked for.
+{-| Frames from the real game: plays a demo through `Doom.Game`, draws the console
+player's view after every level tic with `Doom.Render.View` (as the original does
+with -singletics), and writes the frames asked for.
 
-    ./demo-frames doom.wad DEMO1 out 640 400 300 1500 4000
+    ./demo-frames WAD DEMO OUTDIR [options] TIC...
+
+writes OUTDIR/ticNNNNN.png for each TIC (counted as the C source's `gametic`: 1
+after the first tic). Options:
+
+  - `--blocks N`, `--detail D`: screenblocks (default 9) and detail (0 high, 1 low).
+  - `--raw FILE`: also write every frame from `--first` on, every `--every`th, as
+    records of a little-endian int32 gametic, int32 leveltime and the 64000 bytes of
+    the screen, the format of the C frame dumper the renderer is compared with.
+  - `--last N`: stop after tic N.
+  - `--border`: draw the view border (R\_FillBackScreen, R\_DrawViewBorder) once.
+
+It prints how long the frames took to draw.
 
 -}
 
 import Array exposing (Array)
-import Bytes exposing (Bytes)
-import Dict
-import Doom
-import Doom.Data as Data exposing (Data)
-import Doom.Render.Build as Build
-import Doom.Render.Picture as Picture
+import Bytes exposing (Bytes, Endianness(..))
+import Bytes.Encode as E
+import Doom.Data.Load as DataLoad
+import Doom.Demo as Demo
+import Doom.Game as Game exposing (Game)
+import Doom.Render.Data as RenderData exposing (RenderData)
 import Doom.Render.Png as Png
-import Doom.Render.Raster as Raster
-import Doom.Render.Scene as Scene
-import Doom.Render.SpriteFrames as SpriteFrames
+import Doom.Render.View as View
+import Doom.Ticcmd as Ticcmd
+import Doom.Video as Video exposing (Framebuffer)
 import Doom.Wad as Wad
 import FileSystem
 import Path
 import Stream
 import System
 import Task exposing (Task)
+import Time
 
 
 main : Platform.Program System.Environment () ()
@@ -31,23 +45,110 @@ main =
     System.simpleProgram run
 
 
+type alias Opts =
+    { blocks : Int
+    , detail : Int
+    , raw : Maybe String
+    , first : Int
+    , every : Int
+    , last : Int
+    , border : Bool
+    , tics : List Int
+    }
+
+
+parse : List String -> Opts -> Opts
+parse args opts =
+    let
+        int s d =
+            String.toInt s |> Maybe.withDefault d
+    in
+    case args of
+        "--blocks" :: n :: rest ->
+            parse rest { opts | blocks = int n 9 }
+
+        "--detail" :: n :: rest ->
+            parse rest { opts | detail = int n 0 }
+
+        "--raw" :: f :: rest ->
+            parse rest { opts | raw = Just f }
+
+        "--first" :: n :: rest ->
+            parse rest { opts | first = int n 0 }
+
+        "--every" :: n :: rest ->
+            parse rest { opts | every = max 1 (int n 1) }
+
+        "--last" :: n :: rest ->
+            parse rest { opts | last = int n 1000000000 }
+
+        "--border" :: rest ->
+            parse rest { opts | border = True }
+
+        t :: rest ->
+            parse rest { opts | tics = List.filterMap String.toInt [ t ] ++ opts.tics }
+
+        [] ->
+            { opts | tics = List.sort opts.tics }
+
+
 run : System.Environment -> Task Never ()
 run env =
     case List.drop 1 env.args of
-        wadPath :: demo :: out :: w :: h :: tics ->
+        wadPath :: demo :: out :: rest ->
+            let
+                opts =
+                    parse rest { blocks = 9, detail = 0, raw = Nothing, first = 0, every = 1, last = 1000000000, border = False, tics = [] }
+            in
             FileSystem.readFile (Path.fromPosixString wadPath)
                 |> Task.mapError FileSystem.errorToString
                 |> Task.andThen
                     (\bytes ->
-                        case Doom.start (Doom.Demo demo) bytes of
-                            Ok model ->
-                                shots env
-                                    out
-                                    (Maybe.withDefault 320 (String.toInt w))
-                                    (Maybe.withDefault 200 (String.toInt h))
-                                    (List.filterMap String.toInt tics |> List.sort)
-                                    0
-                                    model
+                        case Wad.fromBytes bytes |> Result.andThen (\wad -> DataLoad.fromWad wad |> Result.map (Tuple.pair wad)) of
+                            Ok ( wad, data ) ->
+                                case Wad.lump demo wad |> Result.fromMaybe ("no lump " ++ demo) |> Result.andThen Demo.fromBytes of
+                                    Ok d ->
+                                        let
+                                            last =
+                                                min opts.last
+                                                    (Maybe.withDefault opts.last
+                                                        (List.maximum opts.tics
+                                                            |> Maybe.map
+                                                                (\m ->
+                                                                    if opts.raw == Nothing then
+                                                                        m
+
+                                                                    else
+                                                                        opts.last
+                                                                )
+                                                        )
+                                                    )
+                                        in
+                                        Time.now
+                                            |> Task.andThen
+                                                (\t0 ->
+                                                    loop env out opts { opts | last = last } (Game.new wad data (Game.playDemo d)) (RenderData.load wad data) (Video.blank 0) 0 [] 0
+                                                        |> Task.andThen
+                                                            (\( frames, drawMs ) ->
+                                                                Time.now
+                                                                    |> Task.andThen
+                                                                        (\t1 ->
+                                                                            say env
+                                                                                (String.fromInt frames
+                                                                                    ++ " frames drawn in "
+                                                                                    ++ String.fromInt drawMs
+                                                                                    ++ " ms ("
+                                                                                    ++ fps frames drawMs
+                                                                                    ++ " frames/s); whole run "
+                                                                                    ++ String.fromInt (Time.posixToMillis t1 - Time.posixToMillis t0)
+                                                                                    ++ " ms"
+                                                                                )
+                                                                        )
+                                                            )
+                                                )
+
+                                    Err e ->
+                                        Task.fail e
 
                             Err e ->
                                 Task.fail e
@@ -55,7 +156,16 @@ run env =
                 |> Task.onError (\e -> say env ("demo-frames: " ++ e))
 
         _ ->
-            say env "usage: demo-frames WAD DEMO OUTDIR WIDTH HEIGHT TIC..."
+            say env "usage: demo-frames WAD DEMO OUTDIR [--blocks N] [--detail D] [--raw FILE [--first N] [--every K]] [--last N] [--border] TIC..."
+
+
+fps : Int -> Int -> String
+fps frames ms =
+    if ms <= 0 then
+        "?"
+
+    else
+        String.fromInt (frames * 1000 // ms)
 
 
 say : System.Environment -> String -> Task x ()
@@ -63,182 +173,96 @@ say env msg =
     Stream.logLine msg env.stdout
 
 
-{-| Run tics one at a time, shooting at each requested one. -}
-shots : System.Environment -> String -> Int -> Int -> List Int -> Int -> Doom.Model -> Task String ()
-shots env out w h wanted tic model =
-    case wanted of
-        [] ->
-            Task.succeed ()
-
-        next :: rest ->
-            if tic < next then
-                shots env out w h wanted (tic + 1) (Tuple.first (Doom.update (Doom.Tick Doom.msPerTic) model))
-
-            else
-                shoot env out w h tic model
-                    |> Task.andThen (\_ -> shots env out w h rest tic model)
+noCmds : Array Ticcmd.Ticcmd
+noCmds =
+    Array.repeat 4 Ticcmd.empty
 
 
-shoot : System.Environment -> String -> Int -> Int -> Int -> Doom.Model -> Task String ()
-shoot env out w h tic model =
-    case Doom.playing model of
-        Nothing ->
-            say env ("tic " ++ String.fromInt tic ++ ": not in a level")
-
-        Just ( gameEnv, world ) ->
-            let
-                wad =
-                    Doom.wad model
-
-                lookup name =
-                    Wad.lump name wad
-
-                spriteNames =
-                    Wad.between "S_START" "S_END" wad |> List.map .name
-
-                data =
-                    gameEnv.data
-
-                mesh =
-                    Build.levelMesh gameEnv.level
-
-                player =
-                    gameEnv.params.consoleplayer
-
-                input =
-                    { level = gameEnv.level
-                    , data = data
-                    , world = world
-                    , mesh = mesh
-                    , spriteFrames = SpriteFrames.build spriteNames
-                    , spriteInfo = Build.spriteInfo lookup spriteNames
-                    , translations = Build.specTranslations gameEnv world.leveltime
-                    , skyTexture = Data.textureNumForName (Build.skyTextureName data.gameMode gameEnv.params.episode gameEnv.params.map) data
-                    , player = player
-                    }
-
-                colormaps =
-                    lookup "COLORMAP" |> Maybe.map Picture.decodeColormaps |> Maybe.withDefault Array.empty
-
-                palettes =
-                    lookup "PLAYPAL" |> Maybe.map Picture.decodePlaypal |> Maybe.withDefault Array.empty
-            in
-            case Build.viewpoint player world of
-                Nothing ->
-                    say env ("tic " ++ String.fromInt tic ++ ": no view")
-
-                Just view ->
-                    let
-                        frame =
-                            Build.frame input view
-
-                        fb =
-                            Raster.render w h (imagesFor lookup data (Array.fromList spriteNames) colormaps frame) mesh frame
-
-                        palette =
-                            Array.get frame.palette palettes |> Maybe.withDefault Array.empty
-
-                        path =
-                            out ++ "/tic" ++ String.padLeft 5 '0' (String.fromInt tic) ++ ".png"
-                    in
-                    FileSystem.writeFile (Png.encode palette fb) (Path.fromPosixString path)
-                        |> Task.mapError FileSystem.errorToString
-                        |> Task.andThen (\_ -> say env ("wrote " ++ path))
-
-
-{-| Decode just the pictures this frame uses.
+{-| Run tics, drawing after each one in a level; `raw` collects the frame records
+(newest first) until they are written out.
 -}
-imagesFor : (String -> Maybe Bytes) -> Data -> Array String -> Picture.Colormaps -> Scene.Frame -> Raster.Images
-imagesFor lookup data spriteLumps colormaps frame =
-    let
-        wallTextures wantMasked =
-            frame.walls
-                |> List.filterMap
-                    (\w ->
-                        case w.look of
-                            Scene.Textured t ->
-                                if t.masked == wantMasked then
-                                    Just t.texture
+loop : System.Environment -> String -> Opts -> Opts -> Game -> RenderData -> Framebuffer -> Int -> List Bytes -> Int -> Task String ( Int, Int )
+loop env out opts0 opts game rd fb tic raw drawMs =
+    if tic >= opts.last || game.error /= Nothing || (game.demo == Nothing && game.state == Game.DemoScreen && game.action == Game.NoAction) then
+        writeRaw opts raw |> Task.map (\_ -> ( List.length raw, drawMs ))
 
-                                else
-                                    Nothing
+    else
+        let
+            ( next, _ ) =
+                Game.tick noCmds game
 
-                            Scene.SkyWall ->
-                                Nothing
-                    )
+            gametic =
+                tic + 1
+        in
+        case Game.playing next of
+            Nothing ->
+                loop env out opts0 opts next rd fb gametic raw drawMs
 
-        compose f nums =
-            nums
-                |> List.foldl
-                    (\n acc ->
-                        if Dict.member n acc then
-                            acc
+            Just ( gameEnv, world ) ->
+                Time.now
+                    |> Task.andThen
+                        (\t0 ->
+                            let
+                                bordered =
+                                    if opts.border && tic == 0 then
+                                        View.drawBorder rd opts.blocks fb
 
-                        else
-                            case Array.get n data.textures of
-                                Just t ->
-                                    Dict.insert n (f lookup t) acc
+                                    else
+                                        fb
 
-                                Nothing ->
-                                    acc
-                    )
-                    Dict.empty
+                                ( fb2, _, rd2 ) =
+                                    View.render rd gameEnv world { screenblocks = opts.blocks, detailshift = opts.detail, player = Game.consolePlayer next } bordered
 
-        solid =
-            compose Picture.composeSolidTexture (frame.skyTexture :: wallTextures False)
+                                screen =
+                                    Video.toBytes fb2
+                            in
+                            Time.now
+                                |> Task.andThen
+                                    (\t1 ->
+                                        let
+                                            ms =
+                                                drawMs + Time.posixToMillis t1 - Time.posixToMillis t0
 
-        masked =
-            compose Picture.composeTexture (wallTextures True)
+                                            raw2 =
+                                                if opts.raw /= Nothing && gametic >= opts.first && modBy opts.every (gametic - opts.first) == 0 then
+                                                    E.encode (E.sequence [ E.signedInt32 LE gametic, E.signedInt32 LE world.leveltime, E.bytes screen ]) :: raw
 
-        flatNums =
-            frame.sectors
-                |> Array.toList
-                |> List.concatMap (\s -> [ s.floorPic, s.ceilingPic ])
-                |> List.filterMap
-                    (\p ->
-                        case p of
-                            Scene.Flat n ->
-                                Just n
+                                                else
+                                                    raw
 
-                            Scene.Sky ->
-                                Nothing
-                    )
+                                            png =
+                                                if List.member gametic opts.tics then
+                                                    let
+                                                        palette =
+                                                            Wad.lump "PLAYPAL" game.wad |> Maybe.map Png.playpal |> Maybe.andThen (Array.get 0) |> Maybe.withDefault Array.empty
 
-        flats =
-            List.foldl
-                (\n acc ->
-                    if Dict.member n acc then
-                        acc
+                                                        path =
+                                                            out ++ "/tic" ++ String.padLeft 5 '0' (String.fromInt gametic) ++ ".png"
+                                                    in
+                                                    FileSystem.writeFile (Png.encode palette { width = 320, height = 200, pixels = pixels fb2 }) (Path.fromPosixString path)
+                                                        |> Task.mapError FileSystem.errorToString
+                                                        |> Task.andThen (\_ -> say env ("wrote " ++ path))
 
-                    else
-                        Array.get n data.flats
-                            |> Maybe.andThen lookup
-                            |> Maybe.andThen Picture.decodeFlat
-                            |> Maybe.map (\p -> Dict.insert n p acc)
-                            |> Maybe.withDefault acc
-                )
-                Dict.empty
-                flatNums
+                                                else
+                                                    Task.succeed ()
+                                        in
+                                        png |> Task.andThen (\_ -> loop env out opts0 opts next rd2 fb2 gametic raw2 ms)
+                                    )
+                        )
 
-        sprites =
-            (List.map .lump frame.sprites ++ List.map .lump frame.weapon)
-                |> List.foldl
-                    (\n acc ->
-                        if Dict.member n acc then
-                            acc
 
-                        else
-                            Array.get n spriteLumps
-                                |> Maybe.andThen lookup
-                                |> Maybe.andThen Picture.decodePatch
-                                |> Maybe.map (\p -> Dict.insert n p acc)
-                                |> Maybe.withDefault acc
-                    )
-                    Dict.empty
-    in
-    { texture = \n -> Dict.get n masked
-    , solidTexture = \n -> Dict.get n solid
-    , flat = \n -> Dict.get n flats
-    , sprite = \n -> Dict.get n sprites
-    , colormaps = colormaps
-    }
+pixels : Framebuffer -> Array Int
+pixels fb =
+    Array.initialize (320 * 200) (\i -> Video.pixel (modBy 320 i) (i // 320) fb)
+
+
+writeRaw : Opts -> List Bytes -> Task String ()
+writeRaw opts raw =
+    case opts.raw of
+        Just file ->
+            FileSystem.writeFile (E.encode (E.sequence (List.map E.bytes (List.reverse raw)))) (Path.fromPosixString file)
+                |> Task.mapError FileSystem.errorToString
+                |> Task.map (\_ -> ())
+
+        Nothing ->
+            Task.succeed ()

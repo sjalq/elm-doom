@@ -24,12 +24,14 @@ import Array exposing (Array)
 import Bytes exposing (Bytes, Endianness(..))
 import Bytes.Decode as D
 import Bytes.Encode as E
+import Doom.Video.Internal as Internal
 
 
-{-| A 320 × 200 screen of palette indices, row by row from the top left.
+{-| A 320 × 200 screen of palette indices. (It is kept as columns, the way the
+original draws most things; `toBytes` gives it row by row.)
 -}
-type Framebuffer
-    = Framebuffer (Array Int)
+type alias Framebuffer =
+    Internal.Framebuffer
 
 
 {-| A decoded patch (patch\_t): its header and, for each column, its posts (a run of
@@ -69,7 +71,7 @@ height =
 -}
 blank : Int -> Framebuffer
 blank color =
-    Framebuffer (Array.repeat (width * height) color)
+    Internal.Framebuffer (Array.repeat width (Array.repeat height color))
 
 
 
@@ -203,7 +205,7 @@ drawPatchTranslated x y translate p fb =
 
 
 drawPatchWith : Bool -> Int -> Int -> (Int -> Int) -> Patch -> Framebuffer -> Framebuffer
-drawPatchWith flipped x0 y0 translate (Patch p) (Framebuffer px) =
+drawPatchWith flipped x0 y0 translate (Patch p) (Internal.Framebuffer cols) =
     let
         left =
             x0 - p.leftoffset
@@ -227,87 +229,111 @@ drawPatchWith flipped x0 y0 translate (Patch p) (Framebuffer px) =
                 acc
 
             else
-                case Array.get source p.columns of
-                    Just colPosts ->
-                        List.foldl (drawPost sx) acc colPosts
+                case ( Array.get source p.columns, Array.get sx acc ) of
+                    ( Just colPosts, Just screenCol ) ->
+                        Array.set sx (List.foldl drawPost screenCol colPosts) acc
 
-                    Nothing ->
+                    _ ->
                         acc
 
-        drawPost sx post acc =
-            List.foldl
-                (\pixelIndex ( row, a ) ->
-                    let
-                        sy =
-                            top + post.top + row
-                    in
-                    if sy < 0 || sy >= height then
-                        ( row + 1, a )
-
-                    else
-                        ( row + 1, Array.set (sy * width + sx) (translate pixelIndex) a )
-                )
-                ( 0, acc )
-                post.pixels
-                |> Tuple.second
+        drawPost post screenCol =
+            setRun (top + post.top) (List.map translate post.pixels) screenCol
     in
-    Framebuffer (List.foldl drawColumn px (List.range 0 (p.width - 1)))
+    Internal.Framebuffer (List.foldl drawColumn cols (List.range 0 (p.width - 1)))
+
+
+{-| Set the pixels of a column from row `y` down, skipping rows off the screen.
+-}
+setRun : Int -> List Int -> Array Int -> Array Int
+setRun y pixels col =
+    case pixels of
+        [] ->
+            col
+
+        c :: rest ->
+            if y < 0 || y >= height then
+                setRun (y + 1) rest col
+
+            else
+                setRun (y + 1) rest (Array.set y c col)
 
 
 {-| tileFlat x y w h flat: the 64 × 64 flat (4096 bytes) tiled over the rectangle,
 aligned to the screen's 64-pixel grid, as F\_TextWrite and R\_FillBackScreen tile them.
 -}
 tileFlat : Int -> Int -> Int -> Int -> Bytes -> Framebuffer -> Framebuffer
-tileFlat x y w h flat (Framebuffer px) =
+tileFlat x y w h flat fb =
     case D.decode (list 4096 D.unsignedInt8) flat of
         Just texels ->
             let
                 tex =
                     Array.fromList texels
-
-                setRow sy acc =
-                    List.foldl
-                        (\sx a ->
-                            Array.set (sy * width + sx)
-                                (Array.get (modBy 64 sy * 64 + modBy 64 sx) tex |> Maybe.withDefault 0)
-                                a
-                        )
-                        acc
-                        (List.range (max 0 x) (min width (x + w) - 1))
             in
-            Framebuffer (List.foldl setRow px (List.range (max 0 y) (min height (y + h) - 1)))
+            mapColumns x
+                w
+                (\sx col ->
+                    List.foldl
+                        (\sy c ->
+                            Array.set sy (Array.get (modBy 64 sy * 64 + modBy 64 sx) tex |> Maybe.withDefault 0) c
+                        )
+                        col
+                        (List.range (max 0 y) (min height (y + h) - 1))
+                )
+                fb
 
         Nothing ->
-            Framebuffer px
+            fb
 
 
 {-| fill x y w h color: a rectangle of one palette index.
 -}
 fill : Int -> Int -> Int -> Int -> Int -> Framebuffer -> Framebuffer
-fill x y w h color (Framebuffer px) =
+fill x y w h color fb =
     let
-        setRow sy acc =
-            List.foldl (\sx a -> Array.set (sy * width + sx) color a)
-                acc
-                (List.range (max 0 x) (min width (x + w) - 1))
+        rows =
+            List.range (max 0 y) (min height (y + h) - 1)
     in
-    Framebuffer (List.foldl setRow px (List.range (max 0 y) (min height (y + h) - 1)))
+    mapColumns x w (\_ col -> List.foldl (\sy c -> Array.set sy color c) col rows) fb
+
+
+{-| Change the columns x to x + w - 1 that are on the screen.
+-}
+mapColumns : Int -> Int -> (Int -> Array Int -> Array Int) -> Framebuffer -> Framebuffer
+mapColumns x w f (Internal.Framebuffer cols) =
+    Internal.Framebuffer
+        (List.foldl
+            (\sx acc ->
+                case Array.get sx acc of
+                    Just col ->
+                        Array.set sx (f sx col) acc
+
+                    Nothing ->
+                        acc
+            )
+            cols
+            (List.range (max 0 x) (min width (x + w) - 1))
+        )
 
 
 {-| Set pixels (x, y, color), in order, skipping those off the screen.
 -}
 plot : List ( Int, Int, Int ) -> Framebuffer -> Framebuffer
-plot points (Framebuffer px) =
-    Framebuffer
+plot points (Internal.Framebuffer cols) =
+    Internal.Framebuffer
         (List.foldl
-            (\( x, y, c ) a ->
+            (\( x, y, c ) acc ->
                 if x < 0 || x >= width || y < 0 || y >= height then
-                    a
+                    acc
 
                 else
-                    Array.set (y * width + x) c a
+                    case Array.get x acc of
+                        Just col ->
+                            Array.set x (Array.set y c col) acc
+
+                        Nothing ->
+                            acc
             )
-            px
+            cols
             points
         )
 
@@ -331,19 +357,47 @@ copyRect sx sy w h src dx dy dest =
 {-| The index at (x, y), 0 off the screen.
 -}
 pixel : Int -> Int -> Framebuffer -> Int
-pixel x y (Framebuffer px) =
+pixel x y (Internal.Framebuffer cols) =
     if x < 0 || x >= width || y < 0 || y >= height then
         0
 
     else
-        Array.get (y * width + x) px |> Maybe.withDefault 0
+        Array.get x cols |> Maybe.andThen (Array.get y) |> Maybe.withDefault 0
 
 
 {-| The screen as 64000 bytes, row by row from the top left.
 -}
 toBytes : Framebuffer -> Bytes
-toBytes (Framebuffer px) =
-    E.encode (E.sequence (Array.foldr (\c acc -> E.unsignedInt8 c :: acc) [] px))
+toBytes (Internal.Framebuffer cols) =
+    let
+        at x y =
+            case Array.get x cols of
+                Just col ->
+                    Array.get y col |> Maybe.withDefault 0
+
+                Nothing ->
+                    0
+
+        -- four pixels to a word, so there are a quarter as many encoders
+        row y x acc =
+            if x < 0 then
+                acc
+
+            else
+                row y
+                    (x - 4)
+                    (E.unsignedInt32 BE (((at (x - 3) y * 256 + at (x - 2) y) * 256 + at (x - 1) y) * 256 + at x y)
+                        :: acc
+                    )
+
+        rows y acc =
+            if y < 0 then
+                acc
+
+            else
+                rows (y - 1) (row y (width - 1) acc)
+    in
+    E.encode (E.sequence (rows (height - 1) []))
 
 
 {-| The screen's 64000 palette indices, row by row from the top left, as they are
@@ -364,4 +418,14 @@ fromBytes bytes =
 
     else
         D.decode (list (width * height) D.unsignedInt8) bytes
-            |> Maybe.map (Array.fromList >> Framebuffer)
+            |> Maybe.map
+                (\px ->
+                    let
+                        flat =
+                            Array.fromList px
+                    in
+                    Internal.Framebuffer
+                        (Array.initialize width
+                            (\x -> Array.initialize height (\y -> Array.get (y * width + x) flat |> Maybe.withDefault 0))
+                        )
+                )

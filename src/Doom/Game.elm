@@ -18,7 +18,8 @@ demo replaces them with its own):
 
 Not translated here: saving and loading games (`Doom.Save` does them; a save request in a ticcmd is ignored), the menus, the
 status bar, automap and chat tickers (they don't change the game), the demo loop and
-title pages (a demo that ends leaves the game on `DemoScreen`, as `-playdemo` quits).
+title pages (with `singledemo`, a demo that ends leaves the game on `DemoScreen`, as
+`-playdemo` quits; without it, `Tic.demoEnded` tells the demo loop to move on).
 The intermission and the finale run here (`Doom.Intermission`, `Doom.Finale`); their
 sounds go into `Tic.sounds` with no origin, and the finale's F\_Responder is
 `Doom.Finale.responder`.
@@ -67,6 +68,8 @@ type alias Game =
     , respawnparm : Bool
     , fastparm : Bool
     , demoplayback : Bool
+    , singledemo : Bool
+    , menuactive : Bool
     , netdemo : Bool
     , state : GameState
     , action : GameAction
@@ -110,6 +113,7 @@ order.
 -}
 type alias Tic =
     { ranLevel : Bool
+    , demoEnded : Bool
     , sounds : List Sound.Event
     }
 
@@ -135,6 +139,8 @@ new wad data action =
     , respawnparm = False
     , fastparm = False
     , demoplayback = False
+    , singledemo = True
+    , menuactive = False
     , netdemo = False
     , state = DemoScreen
     , action = action
@@ -228,24 +234,39 @@ tick netcmds game0 =
     in
     case readCmds netcmds game1 of
         Nothing ->
-            -- the demo is over: like -playdemo, stop here
-            let
-                ended =
-                    checkDemoStatus game1
-            in
-            ( ended, { ranLevel = False, sounds = List.reverse ended.world.sounds } )
+            if game1.singledemo then
+                -- the demo is over: like -playdemo, stop here
+                let
+                    ended =
+                        checkDemoStatus game1
+                in
+                ( ended, { ranLevel = False, demoEnded = True, sounds = List.reverse ended.world.sounds } )
+
+            else
+                -- in the demo loop, G_CheckDemoStatus asks for the next page and the tic
+                -- goes on with the console player's own command
+                let
+                    ended =
+                        endDemo game1
+                in
+                runTic True (readCmds netcmds ended |> Maybe.withDefault ended)
 
         Just game2 ->
-            let
-                ( game3, ranLevel ) =
-                    game2 |> specialButtons |> mainAction
+            runTic False game2
 
-                world =
-                    game3.world
-            in
-            ( { game3 | world = { world | gametic = world.gametic + 1, sounds = [] } }
-            , { ranLevel = ranLevel, sounds = List.reverse world.sounds }
-            )
+
+runTic : Bool -> Game -> ( Game, Tic )
+runTic demoEnded game2 =
+    let
+        ( game3, ranLevel ) =
+            game2 |> specialButtons |> mainAction
+
+        world =
+            game3.world
+    in
+    ( { game3 | world = { world | gametic = world.gametic + 1, sounds = [] } }
+    , { ranLevel = ranLevel, demoEnded = demoEnded, sounds = List.reverse world.sounds }
+    )
 
 
 clearSounds : World -> World
@@ -395,13 +416,26 @@ specialButtons game =
         playerIndexes
 
 
+{-| P\_Ticker's "pause if in menu and at least one tic has been run": the menu is up
+(`menuactive`, which the game shell keeps up to date), in a single-player game that
+isn't a demo, and the console player's view height isn't the 1 that P\_SpawnPlayer's
+mobj starts with before its first tic.
+-}
+menuPause : Game -> Bool
+menuPause game =
+    not game.params.netgame
+        && game.menuactive
+        && not game.demoplayback
+        && (World.player game.params.consoleplayer game.world |> Maybe.map (\p -> p.viewz /= 1) |> Maybe.withDefault True)
+
+
 mainAction : Game -> ( Game, Bool )
 mainAction game =
     case game.state of
         Level ->
             case game.env of
                 Just env ->
-                    if game.paused then
+                    if game.paused || menuPause game then
                         ( game, False )
 
                     else
@@ -537,7 +571,8 @@ doPlayDemo demo game =
     { started | demoplayback = True, demo = Just demo }
 
 
-{-| G\_InitNew: clamp the episode and map to the game, reset the random numbers,
+{-| G\_InitNew (what -warp and -skill start with, keeping -fast, -respawn and
+-nomonsters, which G\_DoNewGame clears): clamp the episode and map to the game, reset the random numbers,
 settle respawning and fast monsters, make every player start afresh, and load the
 level.
 -}
@@ -702,14 +737,29 @@ tryOtherStarts env playernum i ( que, world ) =
                 tryOtherStarts env playernum (i + 1) state
 
 
-{-| G\_CheckDemoStatus when a demo ends: the game stops, and its settings go back to a
-single-player game's.
+{-| G\_CheckDemoStatus when a -playdemo demo ends: the game stops, and its settings go
+back to a single-player game's.
 -}
 checkDemoStatus : Game -> Game
 checkDemoStatus game =
     let
-        params =
+        ended =
+            endDemo game
+    in
+    { ended | state = DemoScreen, env = Nothing }
+
+
+{-| G\_CheckDemoStatus in the demo loop: the settings go back to a single-player
+game's; the level stays until D\_DoAdvanceDemo moves on.
+-}
+endDemo : Game -> Game
+endDemo game =
+    let
+        p =
             game.params
+
+        params =
+            { p | netgame = False, deathmatch = 0, nomonsters = False, consoleplayer = 0 }
 
         world =
             game.world
@@ -718,12 +768,11 @@ checkDemoStatus game =
         | demoplayback = False
         , netdemo = False
         , demo = Nothing
-        , params = { params | netgame = False, deathmatch = 0, nomonsters = False, consoleplayer = 0 }
+        , params = params
+        , env = Maybe.map (\env -> { env | params = params }) game.env
         , respawnparm = False
         , fastparm = False
         , world = { world | playeringame = Array.fromList [ firstInGame world, False, False, False ] }
-        , state = DemoScreen
-        , env = Nothing
     }
 
 

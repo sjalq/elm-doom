@@ -1,18 +1,61 @@
-module Doom.Render.Png exposing (encode, crc32, adler32)
+module Doom.Render.Png exposing (Palette, Rgb, playpal, encode, crc32, adler32)
 
 {-| Write a palette-indexed picture as a PNG file, with nothing but `elm/bytes`: an
 8-bit indexed image (colour type 3) with its palette, the pixels stored in
 uncompressed deflate blocks.
 
-@docs encode, crc32, adler32
+@docs Palette, Rgb, playpal, encode, crc32, adler32
 
 -}
 
 import Array exposing (Array)
 import Bitwise
 import Bytes exposing (Bytes, Endianness(..))
+import Bytes.Decode as Decode
 import Bytes.Encode as Encode
-import Doom.Render.Picture exposing (Palette)
+
+
+{-| A colour.
+-}
+type alias Rgb =
+    { r : Int, g : Int, b : Int }
+
+
+{-| 256 colours.
+-}
+type alias Palette =
+    Array Rgb
+
+
+{-| PLAYPAL: its 14 palettes of 256 colours (768 bytes each). Palette 0 is normal,
+1 to 8 the damage reds, 9 to 12 the item-pickup golds, 13 the radiation suit green.
+-}
+playpal : Bytes -> Array Palette
+playpal bytes =
+    let
+        n =
+            Bytes.width bytes // 768
+
+        byteList =
+            Decode.decode
+                (Decode.loop ( n * 768, [] )
+                    (\( left, acc ) ->
+                        if left <= 0 then
+                            Decode.succeed (Decode.Done (List.reverse acc))
+
+                        else
+                            Decode.map (\b -> Decode.Loop ( left - 1, b :: acc )) Decode.unsignedInt8
+                    )
+                )
+                bytes
+                |> Maybe.withDefault []
+                |> Array.fromList
+
+        at i =
+            Array.get i byteList |> Maybe.withDefault 0
+    in
+    Array.initialize n
+        (\p -> Array.initialize 256 (\i -> { r = at (p * 768 + i * 3), g = at (p * 768 + i * 3 + 1), b = at (p * 768 + i * 3 + 2) }))
 
 
 {-| The PNG file for a `width` × `height` picture of palette indices (row by row;

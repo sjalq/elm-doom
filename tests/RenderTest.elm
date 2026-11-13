@@ -4,12 +4,12 @@ import Array
 import Bytes exposing (Bytes, Endianness(..))
 import Bytes.Decode as Decode
 import Bytes.Encode as Encode
-import Doom.Fixed as Fixed
-import Doom.Level exposing (Child(..), Level)
-import Doom.Render.Build as Build
-import Doom.Render.Picture as Picture
+import Doom.Render.Compose as Compose exposing (Op(..))
+import Doom.Render.Internal as Internal
+import Doom.Render.Mem as Mem
 import Doom.Render.Png as Png
-import Doom.Render.Scene as Scene
+import Doom.Render.View as View
+import Doom.Video as Video
 import Expect
 import Test exposing (Test, describe, test)
 
@@ -17,122 +17,11 @@ import Test exposing (Test, describe, test)
 suite : Test
 suite =
     describe "Doom.Render"
-        [ subsectorTests
-        , pngTests
-        , patchTests
-        , sceneTests
-        ]
-
-
-
--- SUBSECTORS
-
-
-{-| A 256 × 256 room cut in two by one BSP node along x = 128: subsector 0 east of
-it, subsector 1 west. Every line is one-sided, going clockwise round the room so the
-room is on its right.
--}
-tinyLevel : Level
-tinyLevel =
-    let
-        v x y =
-            { x = Fixed.fromInt x, y = Fixed.fromInt y }
-
-        seg a b =
-            { v1 = a, v2 = b, offset = 0, angle = 0, sidedef = 0, linedef = 0, side = 0, frontsector = 0, backsector = Nothing }
-
-        box =
-            { top = 0, bottom = 0, left = 0, right = 0 }
-    in
-    { name = "TINY"
-    , vertexes = Array.fromList [ v 0 0, v 128 0, v 256 0, v 256 256, v 128 256, v 0 256 ]
-    , sectors = Array.fromList [ { lines = Array.empty, blockbox = box, soundorgX = 0, soundorgY = 0 } ]
-    , sides = Array.fromList [ { sector = 0 } ]
-    , lines = Array.empty
-    , segs =
-        Array.fromList
-            [ seg (v 128 256) (v 256 256)
-            , seg (v 256 256) (v 256 0)
-            , seg (v 256 0) (v 128 0)
-            , seg (v 128 0) (v 0 0)
-            , seg (v 0 0) (v 0 256)
-            , seg (v 0 256) (v 128 256)
-            ]
-    , subsectors =
-        Array.fromList
-            [ { sector = 0, numlines = 3, firstline = 0 }
-            , { sector = 0, numlines = 3, firstline = 3 }
-            ]
-    , nodes =
-        Array.fromList
-            [ { x = Fixed.fromInt 128
-              , y = 0
-              , dx = 0
-              , dy = Fixed.fromInt 256
-              , bbox = ( box, box )
-              , children = ( ChildSubsector 0, ChildSubsector 1 )
-              }
-            ]
-    , blockmap = { orgx = 0, orgy = 0, width = 0, height = 0, cells = Array.empty }
-    , reject = Array.empty
-    , things = []
-    }
-
-
-signedArea : List Scene.Point -> Float
-signedArea pts =
-    case pts of
-        first :: _ ->
-            List.map2 (\a b -> a.x * b.y - b.x * a.y) pts (List.drop 1 pts ++ [ first ])
-                |> List.sum
-                |> (\s -> s / 2)
-
-        [] ->
-            0
-
-
-{-| Every turn of the polygon goes left (anticlockwise), allowing for collinear points.
--}
-convex : List Scene.Point -> Bool
-convex pts =
-    case pts of
-        a :: b :: _ ->
-            let
-                ring =
-                    pts ++ [ a, b ]
-
-                triples =
-                    List.map3 (\p q r -> ( p, q, r )) ring (List.drop 1 ring) (List.drop 2 ring)
-            in
-            List.all (\( p, q, r ) -> (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x) >= -1.0e-6) triples
-
-        _ ->
-            False
-
-
-subsectorTests : Test
-subsectorTests =
-    let
-        mesh =
-            Build.levelMesh tinyLevel
-
-        polygons =
-            Array.toList mesh.subsectors |> List.map .polygon
-    in
-    describe "subsector polygons"
-        [ test "there is one per subsector" <|
-            \_ -> List.length polygons |> Expect.equal 2
-        , test "they are convex and anticlockwise" <|
-            \_ -> List.all (\p -> convex p && signedArea p > 0) polygons |> Expect.equal True
-        , test "their areas sum to the room's" <|
-            \_ -> List.map signedArea polygons |> List.sum |> Expect.within (Expect.Absolute 0.01) (256 * 256)
-        , test "each is half the room" <|
-            \_ -> List.map signedArea polygons |> Expect.equal [ 128 * 256, 128 * 256 ]
-        , test "the east one is east of the partition" <|
-            \_ ->
-                List.head polygons
-                    |> Maybe.map (List.all (\p -> p.x >= 128))
-                    |> Expect.equal (Just True)
+        [ pngTests
+        , memTests
+        , videoTests
+        , viewSizeTests
+        , composeTests
         ]
 
 
@@ -239,12 +128,32 @@ pngTests =
 
 
 
--- PATCHES
+-- MEMORY
 
 
 encodeBytes : List Int -> Bytes
 encodeBytes l =
     Encode.encode (Encode.sequence (List.map Encode.unsignedInt8 l))
+
+
+memTests : Test
+memTests =
+    let
+        mem =
+            Mem.fromBytes (encodeBytes [ 1, 2, 3, 0xFE, 0xFF ])
+    in
+    describe "Mem"
+        [ test "reads every byte back, 0 outside" <|
+            \_ -> List.map (\i -> Mem.byte i mem) (List.range -1 6) |> Expect.equal [ 0, 1, 2, 3, 0xFE, 0xFF, 0, 0 ]
+        , test "fromList packs the same way" <|
+            \_ -> Mem.fromList [ 1, 2, 3, 0xFE, 0xFF ] |> Expect.equal mem
+        , test "SHORT and LONG are little-endian, SHORT signed" <|
+            \_ -> ( Mem.s16 3 mem, Mem.u32 0 mem ) |> Expect.equal ( -2, 0xFE030201 )
+        ]
+
+
+
+-- VIDEO
 
 
 {-| A 2 × 3 patch, offsets (1, -2): column 0 a post of 2 pixels at the top, column 1
@@ -260,93 +169,109 @@ tinyPatch =
         ++ [ 1, 2, 0, 20, 21, 0, 0xFF ]
 
 
-patchTests : Test
-patchTests =
+videoTests : Test
+videoTests =
     let
-        t =
-            Picture.transparent
+        fb =
+            case Video.patch (encodeBytes tinyPatch) of
+                Just p ->
+                    Video.drawPatch 10 20 p (Video.blank 7)
 
-        lookup n =
-            case n of
-                "A" ->
-                    Just (encodeBytes tinyPatch)
-
-                _ ->
-                    Nothing
+                Nothing ->
+                    Video.blank 0
     in
-    describe "patches"
-        [ test "decodes size, offsets and posts" <|
+    describe "Video"
+        [ test "drawPatch applies the offsets and posts" <|
             \_ ->
-                Picture.decodePatch (encodeBytes tinyPatch)
-                    |> Maybe.map (\p -> ( ( p.width, p.height ), ( p.leftOffset, p.topOffset ), Array.toList p.pixels ))
-                    |> Expect.equal (Just ( ( 2, 3 ), ( 1, -2 ), [ 10, t, 11, 20, t, 21 ] ))
-        , test "rejects a lump too short to be a patch" <|
-            \_ -> Picture.decodePatch (encodeBytes [ 2, 0, 3 ]) |> Expect.equal Nothing
-        , test "a texture: one-patch columns ignore originY, composited ones don't, later patches win" <|
+                [ Video.pixel 9 22 fb, Video.pixel 9 23 fb, Video.pixel 9 24 fb, Video.pixel 10 23 fb, Video.pixel 10 24 fb, Video.pixel 10 22 fb ]
+                    |> Expect.equal [ 10, 11, 7, 20, 21, 7 ]
+        , test "toBytes is row by row and fromBytes reads it back" <|
             \_ ->
-                -- Patch A at x 0 and again at x 1 two rows down: column 0 has only
-                -- the first, column 1 both, column 2 only the second.
-                Picture.composeTexture lookup
-                    { name = "T"
-                    , width = 3
-                    , height = 4
-                    , patches =
-                        [ { originX = 0, originY = 0, patch = "A" }
-                        , { originX = 1, originY = 2, patch = "A" }
-                        ]
-                    }
-                    |> .pixels
-                    |> Array.toList
-                    |> Expect.equal
-                        [ 10
-                        , t
-                        , t
-                        , 11
-                        , 20
-                        , 20
-                        , t
-                        , 10
-                        , 21
-                        , t
-                        , 11
-                        , t
-                        ]
-        , test "a solid texture reads one-patch columns straight from the lump" <|
+                Video.fromBytes (Video.toBytes fb)
+                    |> Maybe.map (\g -> List.map (\( x, y ) -> Video.pixel x y g) [ ( 9, 22 ), ( 10, 24 ), ( 319, 199 ) ])
+                    |> Expect.equal (Just [ 10, 21, 7 ])
+        , test "toBytes puts (x, y) at y * 320 + x" <|
             \_ ->
-                Picture.composeSolidTexture lookup
-                    { name = "T", width = 1, height = 4, patches = [ { originX = 0, originY = 0, patch = "A" } ] }
-                    |> .pixels
-                    |> Array.toList
-                    -- 10, 11, then the pad byte and the 0xFF end marker.
-                    |> Expect.equal [ 10, 11, 0, 0xFF ]
+                Decode.decode (Decode.map2 (\_ b -> b) (Decode.bytes (24 * 320 + 10)) Decode.unsignedInt8) (Video.toBytes fb)
+                    |> Expect.equal (Just 21)
         ]
 
 
 
--- SCENE
+-- VIEW SIZE
 
 
-sceneTests : Test
-sceneTests =
-    describe "light and palette"
-        [ test "a bright wall right in front is table 0" <|
-            \_ -> Scene.wallColormap 15 10 |> Expect.equal 0
-        , test "a dark far wall is table 31" <|
-            \_ -> Scene.wallColormap 0 5000 |> Expect.equal 31
-        , test "light 8 at depth 160: startmap 28 - 16/2" <|
-            \_ -> Scene.wallColormap 8 160 |> Expect.equal 20
-        , test "plane light 8 at depth 160: j 10, 655360/11/4096 = 14, 28 - 7" <|
-            \_ -> Scene.planeColormap 8 160 |> Expect.equal 21
-        , test "damage picks a red palette" <|
-            \_ -> Scene.paletteFor { damagecount = 20, bonuscount = 0, strength = 0, ironfeet = 0 } |> Expect.equal 4
-        , test "lots of damage tops out at palette 8" <|
-            \_ -> Scene.paletteFor { damagecount = 100, bonuscount = 5, strength = 0, ironfeet = 0 } |> Expect.equal 8
-        , test "a pickup picks gold" <|
-            \_ -> Scene.paletteFor { damagecount = 0, bonuscount = 6, strength = 0, ironfeet = 0 } |> Expect.equal 10
-        , test "the radiation suit is green, blinking at the end" <|
+viewSizeTests : Test
+viewSizeTests =
+    let
+        full =
+            Internal.viewSize 11 0
+
+        low =
+            Internal.viewSize 9 1
+    in
+    describe "R_ExecuteSetViewSize"
+        [ test "windows: 3 to 11 blocks" <|
             \_ ->
-                List.map (\t -> Scene.paletteFor { damagecount = 0, bonuscount = 0, strength = 0, ironfeet = t }) [ 1000, 100, 104 ]
-                    |> Expect.equal [ 13, 0, 13 ]
-        , test "berserk fades in red" <|
-            \_ -> Scene.paletteFor { damagecount = 0, bonuscount = 0, strength = 1, ironfeet = 0 } |> Expect.equal 3
+                List.map View.window [ 3, 9, 10, 11 ]
+                    |> Expect.equal
+                        [ { x = 112, y = 60, width = 96, height = 48 }
+                        , { x = 16, y = 12, width = 288, height = 144 }
+                        , { x = 0, y = 0, width = 320, height = 168 }
+                        , { x = 0, y = 0, width = 320, height = 200 }
+                        ]
+        , test "low detail halves the view's width, not the window's" <|
+            \_ -> ( low.viewwidth, low.scaledviewwidth, low.centerx ) |> Expect.equal ( 144, 288, 72 )
+        , test "the view's edge angles are the clip angle either way" <|
+            \_ ->
+                ( Array.get 0 full.xtoviewangle, Array.get 320 full.xtoviewangle |> Maybe.map (\a -> 4294967296 - a) )
+                    |> Expect.equal ( Just full.clipangle, Just full.clipangle )
+        , test "xtoviewangle falls from left to right" <|
+            \_ ->
+                Array.toList full.xtoviewangle
+                    |> List.map (\a -> modBy 4294967296 (a + 0x40000000))
+                    |> (\l -> List.map2 (>=) l (List.drop 1 l))
+                    |> List.all identity
+                    |> Expect.equal True
+        , test "scalelight: bright and near is table 0, dark and far table 31" <|
+            \_ ->
+                ( Array.get 15 full.scalelight |> Maybe.andThen (Array.get 47), Array.get 0 full.scalelight |> Maybe.andThen (Array.get 0) )
+                    |> Expect.equal ( Just 0, Just 31 )
+        ]
+
+
+
+-- COMPOSING COLUMNS
+
+
+composeTests : Test
+composeTests =
+    let
+        fuzzmap =
+            Array.initialize 256 (\c -> c + 100)
+
+        cols ops masked =
+            { solid = Compose.push 0 ops Compose.emptyColumns.solid, masked = Compose.push 0 masked Compose.emptyColumns.masked }
+
+        pixelsOf fb =
+            List.map (\y -> Video.pixel 0 y fb) (List.range 0 5)
+    in
+    describe "Compose"
+        [ test "runs land on their rows, the rest keeps the old screen" <|
+            \_ ->
+                Compose.apply fuzzmap { solid = Compose.push 0 (Run 3 [ 5, 6 ]) (Compose.push 0 (Run 0 [ 1 ]) Compose.emptyColumns.solid), masked = Compose.emptyColumns.masked } (Video.blank 9)
+                    |> pixelsOf
+                    |> Expect.equal [ 1, 9, 9, 5, 6, 9 ]
+        , test "overlapping runs: the later one wins" <|
+            \_ ->
+                Compose.apply fuzzmap { solid = Compose.push 0 (Run 1 [ 2, 2 ]) (Compose.push 0 (Run 0 [ 1, 1, 1 ]) Compose.emptyColumns.solid), masked = Compose.emptyColumns.masked } (Video.blank 9)
+                    |> pixelsOf
+                    |> Expect.equal [ 1, 2, 2, 9, 9, 9 ]
+        , test "fuzz reads the pixel below or above as it was at that moment" <|
+            \_ ->
+                -- fuzzoffset starts +1, -1, +1: row 1 reads row 2, row 2 reads the
+                -- new row 1, row 3 reads row 4
+                Compose.apply fuzzmap (cols (Run 0 [ 0, 1, 2, 3, 4, 5 ]) (Fuzz 1 3 0)) (Video.blank 9)
+                    |> pixelsOf
+                    |> Expect.equal [ 0, 102, 202, 104, 4, 5 ]
         ]

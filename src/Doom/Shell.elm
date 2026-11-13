@@ -41,6 +41,7 @@ import Doom.Data exposing (Data)
 import Doom.Defs exposing (GameMode(..), PlayerState(..), Skill(..))
 import Doom.Demo as Demo
 import Doom.Event as Event exposing (Event(..))
+import Doom.Finale as Finale
 import Doom.Flags as Flags
 import Doom.Game as Game exposing (Game, GameAction(..), GameState(..))
 import Doom.Gfx as Gfx exposing (Gfx)
@@ -48,6 +49,7 @@ import Doom.Hud.Messages as Messages
 import Doom.Hud.StatusBar as StatusBar
 import Doom.Info.Sfx exposing (Sfx)
 import Doom.Input as Input exposing (Bindings, Controls)
+import Doom.Intermission as Intermission
 import Doom.Intermission.Draw as IntermissionDraw
 import Doom.Menu as Menu exposing (Menu, Settings)
 import Doom.Play.Env exposing (Env)
@@ -675,12 +677,29 @@ gResponder ev ( m, acc ) =
                 ( m, acc )
 
     else
-        case ( inLevel, g.env ) of
-            ( True, Just env ) ->
+        case ( g.state, g.env ) of
+            ( Level, Just env ) ->
                 levelResponders env ev ( m, acc )
 
+            ( Finale finale, _ ) ->
+                case Finale.responder ev finale of
+                    Just ( finale2, sounds ) ->
+                        List.foldl
+                            (\sound state ->
+                                case sound of
+                                    Doom.Sound.Start _ sfx ->
+                                        startSound sfx state
+
+                                    _ ->
+                                        state
+                            )
+                            ( { m | game = { g | state = Finale finale2 } }, acc )
+                            sounds
+
+                    Nothing ->
+                        gameKeys ev ( m, acc )
+
             _ ->
-                -- F_Responder would come here in the finale
                 gameKeys ev ( m, acc )
 
 
@@ -771,7 +790,7 @@ statusBarRequest request ( m, acc ) =
             ( { m | game = { g | action = Game.newGame skill episode map } }, acc )
 
         StatusBar.ChangeMusic lump ->
-            withSound (Sound.changeMusic lump True) ( m, acc )
+            withSound (Sound.changeMusic (songName lump) True) ( m, acc )
 
         StatusBar.BadMusic _ ->
             -- S_ChangeMusic's I_Error "Bad music number"
@@ -990,7 +1009,7 @@ gTicker cmd ( m0, acc0 ) =
                 ( m1, acc1 )
 
         ( m3, acc3 ) =
-            ticSounds before.world.gametic tic.sounds ( m2, acc2 )
+            ticSounds before.world.gametic tic.sounds (music ( m2, acc2 ))
 
         m4 =
             if before.action == Completed && Automap.active m3.automap then
@@ -1210,6 +1229,50 @@ afterLoad initNew before after m acc =
             withSound (Sound.startLevel before.world.gametic env.params) ( m2, acc )
 
 
+{-| The intermission's and the finale's music (WI\_Ticker's and F\_StartFinale's
+S\_ChangeMusic, which does nothing for the song already playing), and the finale's
+request for a melt.
+-}
+music : ( Model, Acc ) -> ( Model, Acc )
+music ( m, acc ) =
+    case m.game.state of
+        Intermission wi ->
+            case Intermission.music wi of
+                Just lump ->
+                    withSound (Sound.changeMusic (songName lump) True) ( m, acc )
+
+                Nothing ->
+                    ( m, acc )
+
+        Finale finale ->
+            let
+                song =
+                    Finale.music finale
+
+                m2 =
+                    if Finale.wipeRequested finale then
+                        { m | wipegamestate = Nothing }
+
+                    else
+                        m
+            in
+            withSound (Sound.changeMusic (songName song.lump) song.looping) ( m2, acc )
+
+        _ ->
+            ( m, acc )
+
+
+{-| A music lump's song name, as `Doom.Audio.Sound` takes it ("D\_INTER" is "inter").
+-}
+songName : String -> String
+songName lump =
+    if String.startsWith "D_" (String.toUpper lump) then
+        String.dropLeft 2 lump
+
+    else
+        lump
+
+
 ticSounds : Int -> List Doom.Sound.Event -> ( Model, Acc ) -> ( Model, Acc )
 ticSounds gametic sounds ( m, acc ) =
     if List.isEmpty sounds then
@@ -1385,9 +1448,8 @@ display m0 =
                 ( Intermission wi, _ ) ->
                     ( m, IntermissionDraw.drawer m.wad wi screen1 )
 
-                ( Finale _, _ ) ->
-                    -- F_Drawer: comes with Doom.Finale
-                    ( m, screen1 )
+                ( Finale finale, _ ) ->
+                    ( m, Finale.drawer m.wad finale screen1 )
 
                 ( DemoScreen, _ ) ->
                     ( m, Gfx.draw 0 0 m.pagename m.gfx screen1 )

@@ -1,3 +1,10 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes what is played:
+//  - oracle_snd_channel is set to the channel number right before each
+//    I_StartSound / I_UpdateSoundParams / I_StopSound call, so the
+//    headless i_sound layer (i_headless.c) can log it (-soundlog).
+//  - S_SetSfxVolume logs its value (-soundlog); it calls no I_ function.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -129,6 +136,11 @@ static musicinfo_t*	mus_playing=0;
 int			numChannels;	
 
 static int		nextcleanup;
+
+// DOOM-ORACLE: channel of the next I_StartSound/I_UpdateSoundParams/
+// I_StopSound call, read by the -soundlog logger in i_headless.c.
+int			oracle_snd_channel = -1;
+void			Oracle_SoundLogSfxVolume (int volume);
 
 
 
@@ -386,6 +398,7 @@ S_StartSoundAtVolume
   
   // Assigns the handle to one of the channels in the
   //  mix/output buffer.
+  oracle_snd_channel = cnum;	// DOOM-ORACLE
   channels[cnum].handle = I_StartSound(sfx_id,
 				       /*sfx->data,*/
 				       volume,
@@ -594,7 +607,10 @@ void S_UpdateSounds(void* listener_p)
 			S_StopChannel(cnum);
 		    }
 		    else
+		    {
+			oracle_snd_channel = cnum;	// DOOM-ORACLE
 			I_UpdateSoundParams(c->handle, volume, sep, pitch);
+		    }
 		}
 	    }
 	    else
@@ -635,6 +651,7 @@ void S_SetSfxVolume(int volume)
 	I_Error("Attempt to set sfx volume at %d", volume);
 
     snd_SfxVolume = volume;
+    Oracle_SoundLogSfxVolume (volume);	// DOOM-ORACLE: -soundlog
 
 }
 
@@ -720,6 +737,7 @@ void S_StopChannel(int cnum)
 	    if (c->sfxinfo == &S_sfx[sfx_sawful])
 		fprintf(stderr, "stopped\n");
 #endif
+	    oracle_snd_channel = cnum;	// DOOM-ORACLE
 	    I_StopSound(c->handle);
 	}
 

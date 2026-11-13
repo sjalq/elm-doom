@@ -2,6 +2,8 @@
 // for DOOM-ORACLE below). None of them changes how the game plays:
 //  - offsetof-style (int)&((T*)0)->f casts go through intptr_t (64-bit
 //    pointers); the values are unchanged.
+//  - NetUpdate returns at once when singletics is set (-full mode), see
+//    the comment there.
 
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
@@ -378,6 +380,17 @@ void NetUpdate (void)
     int				realstart;
     int				gameticdiv;
     
+    // DOOM-ORACLE: with -singletics the original NetUpdate only builds
+    // ticcmds into localcmds, which the singletics loop never reads (it
+    // builds netcmds itself), once for every real-time tic boundary that a
+    // frame happened to cross (it is called from D_Display and four times
+    // from R_RenderPlayerView); each also advances maketic and drains the
+    // event queue mid-frame. That depends only on how fast the machine
+    // draws. The oracle models a machine on which no tic boundary falls
+    // inside a frame: NetUpdate does nothing, and does not read the clock.
+    if (singletics)
+	return;
+
     // check time
     nowtime = I_GetTime ()/ticdup;
     newtics = nowtime - gametime;

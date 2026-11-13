@@ -1,6 +1,8 @@
 // DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
 // for DOOM-ORACLE below). None of them changes how the game plays:
 //  - <malloc.h> (absent on macOS) replaced by <stdlib.h>.
+//  - W_CacheLumpNum allocates ORACLE_LUMPPAD zero bytes past the end of
+//    every lump (see w_wad.h).
 
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
@@ -491,7 +493,8 @@ W_CacheLumpNum
 	// read the lump in
 	
 	//printf ("cache miss on lump %i\n",lump);
-	ptr = Z_Malloc (W_LumpLength (lump), tag, &lumpcache[lump]);
+	// DOOM-ORACLE: ORACLE_LUMPPAD zero bytes past the end (w_wad.h)
+	ptr = Z_Malloc (W_LumpLength (lump) + ORACLE_LUMPPAD, tag, &lumpcache[lump]);
 	W_ReadLump (lump, lumpcache[lump]);
     }
     else

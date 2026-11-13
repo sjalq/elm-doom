@@ -4,6 +4,12 @@
 //    I_StartSound / I_UpdateSoundParams / I_StopSound call, so the
 //    headless i_sound layer (i_headless.c) can log it (-soundlog).
 //  - S_SetSfxVolume logs its value (-soundlog); it calls no I_ function.
+// DOOM-ORACLE: DOS behaviour (DOS v1.9, where linuxdoom differs):
+//  - S_CLOSE_DIST is 200 units (S_ATTENUATOR 1000), not 160 (1040).
+//  - S_StopChannel also forgets the channel's origin.
+//  - S_ChangeMusic plays mus_introa for mus_intro when the music device is
+//    an AdLib or Sound Blaster (the OPL music this port plays) and the WAD
+//    has D_INTROA.
 
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
@@ -65,7 +71,8 @@ const char snd_prefixen[]
 // This should relate to movement clipping resolution
 // (see BLOCKMAP handling).
 // Originally: (200*0x10000).
-#define S_CLOSE_DIST		(160*0x10000)
+// DOOM-ORACLE: DOS behaviour: 200 units (linuxdoom has 160)
+#define S_CLOSE_DIST		(200*0x10000)
 
 
 #define S_ATTENUATOR		((S_CLIPPING_DIST-S_CLOSE_DIST)>>FRACBITS)
@@ -671,6 +678,10 @@ S_ChangeMusic
     musicinfo_t*	music;
     char		namebuf[9];
 
+    // DOOM-ORACLE: DOS behaviour: the OPL version of the title music
+    if (musicnum == mus_intro && W_CheckNumForName("d_introa") >= 0)
+	musicnum = mus_introa;
+
     if ( (musicnum <= mus_None)
 	 || (musicnum >= NUMMUSIC) )
     {
@@ -756,6 +767,7 @@ void S_StopChannel(int cnum)
 	c->sfxinfo->usefulness--;
 
 	c->sfxinfo = 0;
+	c->origin = 0;	// DOOM-ORACLE: DOS behaviour
     }
 }
 

@@ -77,6 +77,7 @@ type Model
         , music : Maybe String
         , musicPaused : Bool
         , lumps : Array SfxLump
+        , hasIntroA : Bool
         }
 
 
@@ -127,6 +128,7 @@ init wad settings =
                 , music = Nothing
                 , musicPaused = False
                 , lumps = Array.map (sfxLump wad) Sfx.all
+                , hasIntroA = Wad.checkNumForName "D_INTROA" wad /= Nothing
                 }
     in
     ( model, SfxVolume (scaled settings.sfxVolume) :: musicVolumeCommands (scaled settings.musicVolume) )
@@ -615,9 +617,12 @@ clippingDist =
     1200 * 0x00010000
 
 
+{-| S\_CLOSE\_DIST, within which a sound is at full volume: DOS v1.9's 200 units
+(linuxdoom has 160), which makes S\_ATTENUATOR 1000.
+-}
 closeDist : Fixed
 closeDist =
-    160 * 0x00010000
+    200 * 0x00010000
 
 
 attenuator : Int
@@ -861,7 +866,9 @@ levelMusic mode episode map =
 
 
 {-| S\_ChangeMusic: play a song (its name without D\_, such as "e1m1" or "intro"),
-unless it is already the one playing.
+unless it is already the one playing. As in DOS v1.9 with an AdLib or Sound
+Blaster (the OPL music the browser plays), "intro" plays D\_INTROA if the WAD has
+it, the title music written for the OPL.
 -}
 changeMusic : String -> Bool -> Model -> ( Model, List Command )
 changeMusic name looping model =
@@ -870,7 +877,11 @@ changeMusic name looping model =
             model
 
         key =
-            String.toLower name
+            if String.toLower name == "intro" && m.hasIntroA then
+                "introa"
+
+            else
+                String.toLower name
     in
     if m.music == Just key then
         ( model, [] )

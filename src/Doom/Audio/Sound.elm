@@ -1,9 +1,8 @@
 module Doom.Audio.Sound exposing
     ( Model, Settings, defaults, init
-    , startLevel, play, startSound, updateSounds
+    , startLevel, play, startSound, startSoundDrawn, updateSounds
     , changeMusic, startMusic, stopMusic, levelMusic, pauseSound, resumeSound
     , setSfxVolume, setMusicVolume, sfxVolume, musicVolume
-    , mRandom, randomIndex, setRandomIndex, clearRandom
     , soundTics, lumpName
     )
 
@@ -13,8 +12,10 @@ and where the listener is, keeping moving sounds up to date, and which music eac
 level has. It gives back `Doom.Audio.Command`s for the host to play, with the C
 source's channel numbers.
 
-Like linuxdoom-1.10, volumes are snd\_SfxVolume's 0 to 15 (the menu's slider, not
-multiplied by 8 as DOS Doom did), and a sound counts as playing for its length: a
+Volumes are set with the menu's 0 to 15 and used, as DOS Doom v1.9 did, multiplied
+by 8 (0 to 120 of DMX's 127; linuxdoom-1.10 commented the `* 8` out, which made its
+sounds fade out short of S\_CLIPPING\_DIST and its boss-level floor of 15 loud).
+A sound counts as playing for its length: a
 lump of N samples at R samples a second started at tic T plays while the game's tic
 count is below `T + ceiling (N * 35 / R)` (the C oracle's I\_SoundIsPlaying).
 
@@ -26,7 +27,7 @@ count is below `T + ceiling (N * 35 / R)` (the C oracle's I\_SoundIsPlaying).
 
 # Sounds
 
-@docs startLevel, play, startSound, updateSounds
+@docs startLevel, play, startSound, startSoundDrawn, updateSounds
 
 
 # Music
@@ -37,16 +38,6 @@ count is below `T + ceiling (N * 35 / R)` (the C oracle's I\_SoundIsPlaying).
 # Volume
 
 @docs setSfxVolume, setMusicVolume, sfxVolume, musicVolume
-
-
-# M\_Random
-
-s\_sound.c varies most sounds' pitch with M\_Random, whose index (`rndindex`) the
-status bar's face, the intermission's animations and the screen wipe also draw
-from. The index lives here; whoever runs those draws from the same index, in the
-same order as the C source (a tic's sounds come before its ST\_Ticker).
-
-@docs mRandom, randomIndex, setRandomIndex, clearRandom
 
 
 # The WAD's sounds
@@ -68,15 +59,15 @@ import Doom.Info.Sfx as Sfx exposing (Sfx)
 import Doom.Int32 as Int32
 import Doom.Level as Level
 import Doom.Play.Env exposing (Env, Params)
-import Doom.Random as Random
+import Doom.Random as Random exposing (Rng)
 import Doom.Sound as Sound exposing (Origin(..), Spot)
 import Doom.Tables as Tables
 import Doom.Wad as Wad exposing (Wad)
 import Doom.World as World exposing (World)
 
 
-{-| The channels and what is on them, the volumes, the music playing, the M\_Random
-index, and each sound's lump and length.
+{-| The channels and what is on them, the volumes, the music playing, and each
+sound's lump and length.
 -}
 type Model
     = Model
@@ -85,7 +76,6 @@ type Model
         , musicVolume : Int
         , music : Maybe String
         , musicPaused : Bool
-        , rndindex : Int
         , lumps : Array SfxLump
         }
 
@@ -106,7 +96,7 @@ type alias SfxLump =
 
 
 {-| The settings from the config file: `snd_channels` (how many sounds play at
-once), `sfx_volume` and `music_volume` (0 to 15).
+once), `sfx_volume` and `music_volume` (the menu's 0 to 15).
 -}
 type alias Settings =
     { channels : Int
@@ -132,15 +122,21 @@ init wad settings =
         model =
             Model
                 { channels = Array.repeat (max 1 settings.channels) Nothing
-                , sfxVolume = settings.sfxVolume
-                , musicVolume = settings.musicVolume
+                , sfxVolume = scaled settings.sfxVolume
+                , musicVolume = scaled settings.musicVolume
                 , music = Nothing
                 , musicPaused = False
-                , rndindex = 0
                 , lumps = Array.map (sfxLump wad) Sfx.all
                 }
     in
-    ( model, SfxVolume settings.sfxVolume :: musicVolumeCommands settings.musicVolume )
+    ( model, SfxVolume (scaled settings.sfxVolume) :: musicVolumeCommands (scaled settings.musicVolume) )
+
+
+{-| The menu's 0 to 15 as the sound code's 0 to 120 (DOS's `* 8`).
+-}
+scaled : Int -> Int
+scaled v =
+    clamp 0 15 v * 8
 
 
 sfxLump : Wad -> Sfx -> SfxLump
@@ -240,6 +236,9 @@ hearingNow env world =
                 FromSector s ->
                     sectorPlace env s
 
+                FromButton i ->
+                    World.buttonOrigin i world |> (\b -> Just ( b.x, b.y ))
+
                 Ambient ->
                     Nothing
     }
@@ -255,6 +254,9 @@ hearingAt env moment =
         \origin ->
             case origin of
                 FromMobj _ ->
+                    moment.origin |> Maybe.map (\s -> ( s.x, s.y ))
+
+                FromButton _ ->
                     moment.origin |> Maybe.map (\s -> ( s.x, s.y ))
 
                 FromSector s ->
@@ -321,42 +323,81 @@ stopAllChannels gametic (Model m) =
 
 {-| The sounds one tic of a level asked for (tic `gametic`), in order:
 S\_StartSound and S\_StopSound.
+
+Most sounds' pitch is varied with M\_Random, the one sequence the wipe, the status
+bar's face, the intermission and the finale also draw from: give the game's `Rng`
+as it is when the tic's sounds start (after P\_Ticker, before ST\_Ticker) and carry
+on with the one given back. Only `rndindex` is used.
+
 -}
-play : Int -> Env -> World -> List Sound.Event -> Model -> ( Model, List Command )
-play gametic env world events model =
+play : Int -> Env -> World -> List Sound.Event -> Rng -> Model -> ( Model, Rng, List Command )
+play gametic env world events rng0 model0 =
     List.foldl
-        (\event ( mdl, cmds ) ->
+        (\event ( mdl, rng, cmds ) ->
             let
-                ( next, more ) =
+                ( next, rng2, more ) =
                     case event of
                         Sound.StartAt origin sfx moment ->
-                            startSoundAt gametic (hearingAt env moment) origin sfx mdl
+                            startSoundAt gametic (hearingAt env moment) origin sfx (Draw rng) mdl
 
                         Sound.Start origin sfx ->
-                            startSoundAt gametic (hearingNow env world) origin sfx mdl
+                            startSoundAt gametic (hearingNow env world) origin sfx (Draw rng) mdl
+
+                        Sound.StartDrawn origin sfx byte ->
+                            startSoundAt gametic (hearingNow env world) origin sfx (Drawn byte) mdl
+                                |> (\( m2, _, c ) -> ( m2, rng, c ))
 
                         Sound.Stop id ->
-                            stopSound gametic (FromMobj id) mdl
+                            stopSound gametic (FromMobj id) mdl |> (\( m2, c ) -> ( m2, rng, c ))
             in
-            ( next, cmds ++ more )
+            ( next, rng2, cmds ++ more )
         )
-        ( model, [] )
+        ( model0, rng0, [] )
         events
 
 
 {-| S\_StartSound (NULL, sfx) at tic `gametic`: a sound from nowhere in particular
-(menus, the intermission, the finale).
+(menus, the intermission, the finale). Draws from M\_Random as `play` does.
 -}
-startSound : Int -> Sfx -> Model -> ( Model, List Command )
-startSound gametic sfx =
-    startSoundAt gametic { map = 0, listener = Nothing, place = always Nothing } Ambient sfx
+startSound : Int -> Sfx -> Rng -> Model -> ( Model, Rng, List Command )
+startSound gametic sfx rng =
+    startSoundAt gametic nowhere Ambient sfx (Draw rng)
+
+
+{-| `startSound` with the pitch variation byte already drawn from M\_Random by the
+caller (`Doom.Sound.StartDrawn`; ignored for sounds that don't draw one).
+-}
+startSoundDrawn : Int -> Sfx -> Int -> Model -> ( Model, List Command )
+startSoundDrawn gametic sfx byte model =
+    startSoundAt gametic nowhere Ambient sfx (Drawn byte) model
+        |> (\( m, _, c ) -> ( m, c ))
+
+
+nowhere : Hearing
+nowhere =
+    { map = 0, listener = Nothing, place = always Nothing }
+
+
+{-| Where a sound's pitch variation comes from: M\_Random, or a byte drawn already.
+-}
+type PitchSource
+    = Draw Rng
+    | Drawn Int
 
 
 {-| S\_StartSoundAtVolume with the full volume.
 -}
-startSoundAt : Int -> Hearing -> Origin -> Sfx -> Model -> ( Model, List Command )
-startSoundAt gametic hearing origin sfx ((Model m) as model) =
+startSoundAt : Int -> Hearing -> Origin -> Sfx -> PitchSource -> Model -> ( Model, Rng, List Command )
+startSoundAt gametic hearing origin sfx source ((Model m) as model) =
     let
+        rng =
+            case source of
+                Draw r ->
+                    r
+
+                Drawn _ ->
+                    Random.init
+
         info =
             Sfx.info sfx
 
@@ -400,27 +441,39 @@ startSoundAt gametic hearing origin sfx ((Model m) as model) =
                 Just ( linkedVolume, 128 )
     in
     if sfxId < 1 || not linkedAudible then
-        ( model, [] )
+        ( model, rng, [] )
 
     else
         case heard of
             Nothing ->
-                ( model, [] )
+                ( model, rng, [] )
 
             Just ( volume, sep ) ->
                 let
-                    ( pitch, Model randomised ) =
-                        if sfx == Sfx.Sawup || sfx == Sfx.Sawidl || sfx == Sfx.Sawful || sfx == Sfx.Sawhit then
-                            mRandom model |> Tuple.mapFirst (\r -> clampByte (pitch0 + 8 - Bitwise.and r 15))
+                    ( byte, rng2 ) =
+                        if Sound.drawsPitch sfx then
+                            case source of
+                                Draw r ->
+                                    Random.mRandom r
 
-                        else if sfx /= Sfx.Itemup && sfx /= Sfx.Tink then
-                            mRandom model |> Tuple.mapFirst (\r -> clampByte (pitch0 + 16 - Bitwise.and r 31))
+                                Drawn b ->
+                                    ( b, rng )
 
                         else
-                            ( pitch0, model )
+                            ( 0, rng )
+
+                    pitch =
+                        if sfx == Sfx.Sawup || sfx == Sfx.Sawidl || sfx == Sfx.Sawful || sfx == Sfx.Sawhit then
+                            clampByte (pitch0 + 8 - Bitwise.and byte 15)
+
+                        else if Sound.drawsPitch sfx then
+                            clampByte (pitch0 + 16 - Bitwise.and byte 31)
+
+                        else
+                            pitch0
 
                     ( stopped, stops ) =
-                        stopSound gametic origin (Model randomised)
+                        stopSound gametic origin model
                 in
                 case getChannel gametic origin sfx stopped of
                     ( Model got, evictions, Just cnum ) ->
@@ -429,13 +482,14 @@ startSoundAt gametic hearing origin sfx ((Model m) as model) =
                                 Array.get sfxId got.lumps |> Maybe.withDefault { lump = "DSPISTOL", tics = 0 }
                         in
                         ( Model { got | channels = Array.set cnum (Just { sfx = sfx, origin = origin, ends = gametic + lump.tics }) got.channels }
+                        , rng2
                         , stops
                             ++ evictions
                             ++ [ StartSound { channel = cnum, lump = lump.lump, volume = volume, separation = sep, pitch = pitch, priority = priority } ]
                         )
 
                     ( none, evictions, Nothing ) ->
-                        ( none, stops ++ evictions )
+                        ( none, rng2, stops ++ evictions )
 
 
 clampByte : Int -> Int
@@ -880,19 +934,19 @@ resumeSound ((Model m) as model) =
 -- VOLUME
 
 
-{-| S\_SetSfxVolume (0 to 15). Sounds already playing keep their volume until they
-are next updated.
+{-| The menu's sound volume slider (0 to 15): S\_SetSfxVolume with 8 times it.
+Sounds already playing keep their volume until they are next updated.
 -}
 setSfxVolume : Int -> Model -> ( Model, List Command )
 setSfxVolume v (Model m) =
-    ( Model { m | sfxVolume = clamp 0 127 v }, [ SfxVolume (clamp 0 127 v) ] )
+    ( Model { m | sfxVolume = scaled v }, [ SfxVolume (scaled v) ] )
 
 
-{-| S\_SetMusicVolume (0 to 15).
+{-| The menu's music volume slider (0 to 15): S\_SetMusicVolume with 8 times it.
 -}
 setMusicVolume : Int -> Model -> ( Model, List Command )
 setMusicVolume v (Model m) =
-    ( Model { m | musicVolume = clamp 0 127 v }, musicVolumeCommands (clamp 0 127 v) )
+    ( Model { m | musicVolume = scaled v }, musicVolumeCommands (scaled v) )
 
 
 musicVolumeCommands : Int -> List Command
@@ -900,51 +954,15 @@ musicVolumeCommands v =
     [ MusicVolume 127, MusicVolume v ]
 
 
-{-| snd\_SfxVolume.
+{-| snd\_SfxVolume (0 to 120).
 -}
 sfxVolume : Model -> Int
 sfxVolume (Model m) =
     m.sfxVolume
 
 
-{-| snd\_MusicVolume.
+{-| snd\_MusicVolume (0 to 120).
 -}
 musicVolume : Model -> Int
 musicVolume (Model m) =
     m.musicVolume
-
-
-
--- M_RANDOM
-
-
-{-| M\_Random: the next number from the index kept here.
--}
-mRandom : Model -> ( Int, Model )
-mRandom (Model m) =
-    let
-        ( r, rng ) =
-            Random.mRandom { prndindex = 0, rndindex = m.rndindex }
-    in
-    ( r, Model { m | rndindex = rng.rndindex } )
-
-
-{-| `rndindex`.
--}
-randomIndex : Model -> Int
-randomIndex (Model m) =
-    m.rndindex
-
-
-{-| Set `rndindex` (after something else has drawn from it).
--}
-setRandomIndex : Int -> Model -> Model
-setRandomIndex i (Model m) =
-    Model { m | rndindex = modBy 256 i }
-
-
-{-| M\_ClearRandom's half of the job (G\_InitNew): `rndindex` back to 0.
--}
-clearRandom : Model -> Model
-clearRandom =
-    setRandomIndex 0

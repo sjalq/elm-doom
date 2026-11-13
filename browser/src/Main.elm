@@ -59,7 +59,7 @@ type alias Stored =
 type alias Game =
     { doom : Doom.Model
     , settings : Settings
-    , savedGames : Dict Int Bytes
+    , saveCount : Int
     }
 
 
@@ -134,7 +134,7 @@ update msg model =
             in
             case Doom.start withSettings bytes of
                 Ok ( doom, commands ) ->
-                    ( Running { doom = doom, settings = Doom.settings doom, savedGames = Doom.savedGames doom }
+                    ( Running { doom = doom, settings = Doom.settings doom, saveCount = Doom.saveCount doom }
                     , Cmd.batch [ sounds doom commands, status help ]
                     )
 
@@ -179,9 +179,6 @@ step msg game =
         settings =
             Doom.settings doom
 
-        savedGames =
-            Doom.savedGames doom
-
         storeSettings =
             if settings /= game.settings then
                 [ store { key = "settings", value = Just (E.encode 0 (encodeSettings settings)) } ]
@@ -189,26 +186,17 @@ step msg game =
             else
                 []
 
+        -- a game was saved (Elm can't compare Bytes, so the game counts its saves)
         storeGames =
-            if shape savedGames /= shape game.savedGames then
-                List.range 0 5
-                    |> List.filterMap
-                        (\slot ->
-                            let
-                                now =
-                                    Dict.get slot savedGames
-                            in
-                            if Maybe.map Bytes.width now /= Maybe.map Bytes.width (Dict.get slot game.savedGames) then
-                                Just (store { key = "save" ++ String.fromInt slot, value = Maybe.map Base64.fromBytes now })
-
-                            else
-                                Nothing
-                        )
+            if Doom.saveCount doom /= game.saveCount then
+                Doom.savedGames doom
+                    |> Dict.toList
+                    |> List.map (\( slot, bytes ) -> store { key = "save" ++ String.fromInt slot, value = Just (Base64.fromBytes bytes) })
 
             else
                 []
     in
-    ( Running { doom = doom, settings = settings, savedGames = savedGames }
+    ( Running { doom = doom, settings = settings, saveCount = Doom.saveCount doom }
     , Cmd.batch (sounds doom commands :: storeSettings ++ storeGames)
     )
 
@@ -220,15 +208,6 @@ sounds doom commands =
 
     else
         audio (Host.encodeCommands (Doom.wad doom) commands)
-
-
-{-| Which slots hold a game, and how long each is. (Elm's `==` can't compare `Bytes`:
-it finds two different ones equal, so a game saved over another of the same length
-isn't noticed.)
--}
-shape : Dict Int Bytes -> List ( Int, Int )
-shape games =
-    Dict.toList games |> List.map (Tuple.mapSecond Bytes.width)
 
 
 encodeSettings : Settings -> E.Value

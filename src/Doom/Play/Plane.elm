@@ -7,14 +7,11 @@ floor, ceiling, door and lift uses.
 
 -}
 
-import Doom.Angle as Angle exposing (Angle)
-import Doom.Defs as Defs
-import Doom.Fixed as Fixed exposing (Fixed)
-import Doom.Info.MobjType as MobjType exposing (MobjType)
-import Doom.Info.State as State exposing (State)
-import Doom.Level as Level exposing (Level, LineId, SectorId, SideId)
-import Doom.Mobj exposing (Mobj, ThinkerId)
-import Doom.Play.Env as Env exposing (Env)
+import Doom.Fixed exposing (Fixed)
+import Doom.Int32 as Int32
+import Doom.Level exposing (SectorId)
+import Doom.Play.Env exposing (Env)
+import Doom.Play.Map as Map
 import Doom.World as World exposing (World)
 
 
@@ -26,8 +23,129 @@ type PlaneResult
     | PlanePastDest
 
 
+{-| Which plane moves.
+-}
+type Plane
+    = Floor
+    | Ceiling
+
+
 {-| T\_MovePlane sector speed dest crush floorOrCeiling direction (floorOrCeiling 0 floor, 1 ceiling).
+
+Moves the plane `speed` towards `dest` (direction -1 down, 1 up), stopping at `dest`
+(`PlanePastDest`). Things that no longer fit are refitted (`Map.changeSector`); if
+something doesn't fit, the plane goes back where it was, except that a crushing floor
+going up or ceiling going down stays put and reports `PlaneCrushed` (the things take
+damage instead), and a ceiling going up never goes back. Reaching `dest` is reported as
+`PlanePastDest` even when the plane had to go back.
+
 -}
 movePlane : Env -> SectorId -> Fixed -> Fixed -> Bool -> Int -> Int -> World -> ( PlaneResult, World )
-movePlane =
-    Debug.todo "Doom.Play.Plane.movePlane"
+movePlane env sectorId speed dest crush floorOrCeiling direction world =
+    let
+        plane =
+            if floorOrCeiling == 0 then
+                Floor
+
+            else
+                Ceiling
+
+        lastpos =
+            height plane (World.sector sectorId world)
+
+        moveTo h w =
+            World.updateSector sectorId (setHeight plane h) w
+
+        -- put the plane at h and refit things; True if something doesn't fit
+        changeTo h w =
+            Map.changeSector env sectorId crush (moveTo h w)
+
+        goBack w =
+            Tuple.second (changeTo lastpos w)
+    in
+    if floorOrCeiling /= 0 && floorOrCeiling /= 1 then
+        ( PlaneOk, world )
+
+    else if direction == -1 then
+        let
+            lowered =
+                Int32.sub lastpos speed
+        in
+        if lowered < dest then
+            pastDest (changeTo dest world) goBack
+
+        else
+            let
+                ( nofit, moved ) =
+                    changeTo lowered world
+            in
+            if not nofit then
+                ( PlaneOk, moved )
+
+            else if plane == Ceiling && crush then
+                -- could get crushed
+                ( PlaneCrushed, moved )
+
+            else
+                ( PlaneCrushed, goBack moved )
+
+    else if direction == 1 then
+        let
+            raised =
+                Int32.add lastpos speed
+        in
+        if raised > dest then
+            pastDest (changeTo dest world) goBack
+
+        else
+            let
+                ( nofit, moved ) =
+                    changeTo raised world
+            in
+            if not nofit then
+                ( PlaneOk, moved )
+
+            else if plane == Ceiling then
+                -- the C source's check here is compiled out
+                ( PlaneOk, moved )
+
+            else if crush then
+                -- could get crushed
+                ( PlaneCrushed, moved )
+
+            else
+                ( PlaneCrushed, goBack moved )
+
+    else
+        ( PlaneOk, world )
+
+
+{-| The plane reached its destination: if something doesn't fit there, go back.
+-}
+pastDest : ( Bool, World ) -> (World -> World) -> ( PlaneResult, World )
+pastDest ( nofit, moved ) goBack =
+    if nofit then
+        ( PlanePastDest, goBack moved )
+
+    else
+        ( PlanePastDest, moved )
+
+
+height : Plane -> World.SectorState -> Fixed
+height plane s =
+    case plane of
+        Floor ->
+            s.floorheight
+
+        Ceiling ->
+            s.ceilingheight
+
+
+setHeight : Plane -> Fixed -> World.SectorState -> World.SectorState
+setHeight plane h s =
+    case plane of
+        Floor ->
+            { s | floorheight = h }
+
+        Ceiling ->
+            { s | ceilingheight = h }

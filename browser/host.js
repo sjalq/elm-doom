@@ -30,6 +30,8 @@ const CODE_KEYS = {
   Equal: KEY.EQUALS, NumpadEqual: KEY.EQUALS, Minus: KEY.MINUS, NumpadSubtract: KEY.MINUS,
   ShiftLeft: KEY.RSHIFT, ShiftRight: KEY.RSHIFT, ControlLeft: KEY.RCTRL, ControlRight: KEY.RCTRL,
   AltLeft: KEY.RALT, AltRight: KEY.RALT,
+  // keys that type nothing (the menu gives them the character 0, as DOS Doom does)
+  CapsLock: 0x80 + 0x3a, ScrollLock: 0x80 + 0x46, NumLock: 0x80 + 0x45,
   Space: 32, Comma: 44, Period: 46, Slash: 47, Semicolon: 59, Quote: 39,
   BracketLeft: 91, BracketRight: 93, Backslash: 92, Backquote: 96,
 };

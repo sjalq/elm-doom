@@ -21,6 +21,7 @@ import Doom.Info.Sfx as Sfx
 import Doom.Intermission as Intermission exposing (Intermission, WbPlayer, WbStart)
 import Doom.Intermission.Draw as Draw
 import Doom.Play.Setup as Setup
+import Doom.Random as Random
 import Doom.Sound as Sound
 import Doom.Ticcmd as Ticcmd
 import Doom.Video as Video exposing (Framebuffer)
@@ -203,8 +204,14 @@ logTic tic fb sounds music log =
             List.filterMap
                 (\s ->
                     case s of
+                        Sound.StartDrawn _ sfx byte ->
+                            Just (String.fromInt tic ++ " sfx " ++ (Sfx.info sfx).name ++ " " ++ String.fromInt byte)
+
                         Sound.Start _ sfx ->
-                            Just (String.fromInt tic ++ " sfx " ++ (Sfx.info sfx).name)
+                            Just (String.fromInt tic ++ " sfx " ++ (Sfx.info sfx).name ++ " undrawn")
+
+                        Sound.StartAt _ sfx _ ->
+                            Just (String.fromInt tic ++ " sfx " ++ (Sfx.info sfx).name ++ " undrawn")
 
                         Sound.Stop _ ->
                             Nothing
@@ -313,21 +320,21 @@ simulate wad o scenario =
 
         Fin episode map ->
             let
-                loop tic model fb log =
+                loop tic rng model fb log =
                     if tic >= o.tics then
                         finish log
 
                     else
                         let
-                            ( afterKey, keySounds ) =
+                            ( afterKey, keySounds, rng2 ) =
                                 if List.member tic o.keys then
-                                    Finale.responder (Event.KeyDown 32) model |> Maybe.withDefault ( model, [] )
+                                    Finale.responder (Event.KeyDown 32) rng model |> Maybe.withDefault ( model, [], rng )
 
                                 else
-                                    ( model, [] )
+                                    ( model, [], rng )
 
                             t =
-                                Finale.ticker (List.member tic o.press) afterKey
+                                Finale.ticker (List.member tic o.press) rng2 afterKey
 
                             fb2 =
                                 Finale.drawer wad t.model fb
@@ -338,9 +345,9 @@ simulate wad o scenario =
                             log2 =
                                 logTic tic fb2 (keySounds ++ t.sounds) (Just (m.lump ++ " " ++ boolInt m.looping)) log
                         in
-                        loop (tic + 1) t.model fb2 log2
+                        loop (tic + 1) t.rng t.model fb2 log2
             in
-            loop 0 (Finale.start mode episode map) (Video.blank 0) empty
+            loop 0 Random.init (Finale.start mode episode map) (Video.blank 0) empty
 
 
 boolInt : Bool -> String

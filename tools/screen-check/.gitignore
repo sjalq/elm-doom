@@ -1,0 +1,8 @@
+elm-stuff/
+eco-stuff/
+build/
+out/
+harness
+screen-check
+__pycache__/
+*.wad

@@ -4,6 +4,8 @@
 //    M_LoadDefaults only applies the built-in defaults, never a config
 //    file. Defaults are keys, mouse, volumes, screen size, chat macros:
 //    none is play state.
+//  - -set <name> <value> overrides a built-in default (as a config file
+//    line would).
 
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
@@ -41,6 +43,7 @@ rcsid[] = "$Id: m_misc.c,v 1.6 1997/02/03 22:45:10 b1 Exp $";
 #include <unistd.h>
 
 #include <ctype.h>
+#include <string.h>	// DOOM-ORACLE: strdup for -set
 
 
 #include "doomdef.h"
@@ -361,6 +364,34 @@ void M_LoadDefaults (void)
 	    *defaults[i].location = (int) defaults[i].defaultvalue;
 	else
 	    *(char **) defaults[i].location = (char *) defaults[i].defaultvalue;
+    }
+
+    // DOOM-ORACLE: -set <name> <value> (repeatable) overrides one default,
+    // as a line "<name> <value>" of the original config file would: a
+    // number (decimal, or 0x hex as the original's sscanf "%x" allowed) or
+    // a "quoted string".
+    for (i=1 ; i<myargc-2 ; i++)
+    {
+	int j;
+	if (strcmp (myargv[i], "-set"))
+	    continue;
+	for (j=0 ; j<numdefaults ; j++)
+	    if (!strcmp (myargv[i+1], defaults[j].name))
+		break;
+	if (j == numdefaults)
+	    I_Error ("-set: unknown default %s", myargv[i+1]);
+	if (myargv[i+2][0] == '"')
+	{
+	    char* v = strdup (myargv[i+2] + 1);
+	    if (*v && v[strlen (v) - 1] == '"')
+		v[strlen (v) - 1] = 0;
+	    *(char **) defaults[j].location = v;
+	}
+	else
+	    *defaults[j].location = (int) strtol (myargv[i+2], NULL, 0);
+	fprintf (stderr, "doom-oracle: default %s = %s\n",
+		 myargv[i+1], myargv[i+2]);
+	i += 2;
     }
 }
 

@@ -6,6 +6,8 @@
 //  - Arrays of pointers (textures, texturecolumnlump, ...) were allocated
 //    as n*4 bytes; they are n*sizeof(element).
 //  - colormaps alignment cast through intptr_t; <alloca.h> always included.
+//  - composite textures get ORACLE_LUMPPAD zero bytes past their end, as
+//    cached lumps do (w_wad.c).
 
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
@@ -248,7 +250,8 @@ void R_GenerateComposite (int texnum)
 	
     texture = textures[texnum];
 
-    block = Z_Malloc (texturecompositesize[texnum],
+    // DOOM-ORACLE: ORACLE_LUMPPAD zero bytes past the end (w_wad.h)
+    block = Z_Malloc (texturecompositesize[texnum] + ORACLE_LUMPPAD,
 		      PU_STATIC, 
 		      &texturecomposite[texnum]);	
 

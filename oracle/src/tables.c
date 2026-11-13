@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - finetangent and finesine are the two halves of one array,
+//    oracle_finetrig, finetangent first (see tables.h).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -64,8 +69,11 @@ SlopeDiv
 
 
 
-int finetangent[4096] =
+// DOOM-ORACLE: finetangent (4096) followed by finesine (10240), one
+// array; finetangent and finesine are macros (tables.h).
+int oracle_finetrig[FINEANGLES/2 + 5*FINEANGLES/4] =
 {
+    // finetangent
     -170910304,-56965752,-34178904,-24413316,-18988036,-15535599,-13145455,-11392683,
     -10052327,-8994149,-8137527,-7429880,-6835455,-6329090,-5892567,-5512368,
     -5178251,-4882318,-4618375,-4381502,-4167737,-3973855,-3797206,-3635590,
@@ -577,12 +585,9 @@ int finetangent[4096] =
     2712030,2800983,2895966,2997613,3106651,3223918,3350381,3487165,
     3635590,3797206,3973855,4167737,4381502,4618375,4882318,5178251,
     5512368,5892567,6329090,6835455,7429880,8137527,8994149,10052327,
-    11392683,13145455,15535599,18988036,24413316,34178904,56965752,170910304
-};
+    11392683,13145455,15535599,18988036,24413316,34178904,56965752,170910304,
 
-
-int finesine[10240] =
-{
+    // finesine
     25,75,125,175,226,276,326,376,
     427,477,527,578,628,678,728,779,
     829,879,929,980,1030,1080,1130,1181,

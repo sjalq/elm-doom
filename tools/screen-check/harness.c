@@ -32,6 +32,7 @@
 #include "f_finale.h"
 #include "g_game.h"
 #include "sounds.h"
+#include "m_random.h"
 
 void R_Init (void);
 void P_Init (void);
@@ -49,8 +50,8 @@ void Oracle_FinishUpdate (void) {}
 void Oracle_SoundLog (const char* fmt, ...) {}
 void Oracle_SoundLogSfxVolume (int volume) {}
 
-// s_sound.c is left out: its S_StartSound draws M_Random for the pitch, which
-// the Elm side leaves to the host; these log what the screens ask for instead
+// s_sound.c is left out (it needs a level to listen from); these stubs log what
+// the screens ask for, and S_StartSound draws the pitch M_Random as it does
 int	snd_SfxVolume = 15;
 int	snd_MusicVolume = 15;
 int	numChannels = 8;
@@ -69,9 +70,11 @@ void S_StopMusic (void) {}
 static FILE*	soundlog;
 static int	tic;
 
+// S_StartSoundAtVolume's pitch variation draw (an ambient sound is always heard)
 void S_StartSound (void* origin, int id)
 {
-    fprintf (soundlog, "%d sfx %s\n", tic, S_sfx[id].name);
+    int byte = (id == sfx_itemup || id == sfx_tink) ? 0 : M_Random ();
+    fprintf (soundlog, "%d sfx %s %d\n", tic, S_sfx[id].name, byte);
 }
 
 void S_ChangeMusic (int id, int looping)

@@ -56,8 +56,8 @@ responder _ _ =
 
 {-| HU\_Erase: back screen, then screens[0].
 -}
-erase : { automap : Bool, viewwindowx : Int, viewwindowy : Int, viewwidth : Int, viewheight : Int } -> Framebuffer -> Model -> Framebuffer -> ( Model, Framebuffer )
-erase _ _ _ _ =
+erase : Bool -> { x : Int, y : Int, width : Int, height : Int } -> Framebuffer -> Model -> Framebuffer -> ( Model, Framebuffer )
+erase _ _ _ _ _ =
     Debug.todo "Doom.Hud.Messages.erase"
 
 

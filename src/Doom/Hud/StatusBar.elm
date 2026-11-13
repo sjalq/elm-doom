@@ -58,7 +58,7 @@ automapEntered _ =
 
 {-| ST\_Responder.
 -}
-responder : Event -> Env -> World -> Int -> Model -> { model : Model, world : World, request : Maybe Request }
+responder : Event -> Env -> World -> Int -> Model -> { model : Model, world : World, requests : List Request }
 responder _ _ _ _ _ =
     Debug.todo "Doom.Hud.StatusBar.responder"
 

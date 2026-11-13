@@ -744,12 +744,7 @@ levelResponders env ev ( m, acc ) =
                     { m | statusBar = st.model, game = { g | world = st.world } }
 
                 ( m3, acc3 ) =
-                    case st.request of
-                        Just request ->
-                            statusBarRequest request ( m2, acc )
-
-                        Nothing ->
-                            ( m2, acc )
+                    List.foldl statusBarRequest ( m2, acc ) st.requests
 
                 g3 =
                     m3.game
@@ -1388,12 +1383,11 @@ display m0 =
             case ( gs, m.renderData ) of
                 ( GsLevel, Just rd ) ->
                     if gametic /= 0 then
-                        Messages.erase
-                            { automap = automapActive
-                            , viewwindowx = win.x
-                            , viewwindowy = win.y
-                            , viewwidth = win.width // (2 ^ m.viewDetail)
-                            , viewheight = win.height
+                        Messages.erase automapActive
+                            { x = win.x
+                            , y = win.y
+                            , width = win.width // (2 ^ m.viewDetail)
+                            , height = win.height
                             }
                             (backScreen rd)
                             m.messages

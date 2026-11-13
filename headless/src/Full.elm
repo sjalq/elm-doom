@@ -239,7 +239,7 @@ setting name v o =
 parseEvents : String -> Result String (Dict Int (List Event))
 parseEvents text =
     String.lines text
-        |> List.filter (\l -> String.trim l /= "")
+        |> List.filter (\l -> String.trim l /= "" && not (String.startsWith "#" (String.trim l)))
         |> List.map String.words
         |> List.filter (not << List.isEmpty)
         |> List.foldl

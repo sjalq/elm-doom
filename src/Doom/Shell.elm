@@ -53,7 +53,7 @@ import Doom.Intermission as Intermission
 import Doom.Intermission.Draw as IntermissionDraw
 import Doom.Menu as Menu exposing (Menu, Settings)
 import Doom.Play.Env exposing (Env)
-import Doom.Random as Random
+import Doom.Random as Random exposing (Rng)
 import Doom.Render.Data as RenderData exposing (RenderData)
 import Doom.Render.View as View
 import Doom.Save as Save
@@ -514,29 +514,55 @@ meltStep tics melt m =
 withSound : (Sound.Model -> ( Sound.Model, List Command )) -> ( Model, Acc ) -> ( Model, Acc )
 withSound f ( m, acc ) =
     let
-        world =
-            m.game.world
-
-        rng =
-            world.rng
-
         ( sound, cmds ) =
-            f (Sound.setRandomIndex rng.rndindex m.sound)
+            f m.sound
+    in
+    ( { m | sound = sound }, { acc | audio = List.reverse cmds ++ acc.audio } )
 
+
+{-| A sound call that draws M\_Random (a sound's pitch), from the one index the whole
+program shares: the world's `rng.rndindex`, as the status bar's face, the
+intermission's animations and the wipe draw from it too.
+-}
+withRandomSound : (Rng -> Sound.Model -> ( Sound.Model, Rng, List Command )) -> ( Model, Acc ) -> ( Model, Acc )
+withRandomSound f ( m, acc ) =
+    let
         g =
             m.game
+
+        world =
+            g.world
+
+        ( sound, rng, cmds ) =
+            f world.rng m.sound
     in
-    ( { m
-        | sound = sound
-        , game = { g | world = { world | rng = { rng | rndindex = Sound.randomIndex sound } } }
-      }
+    ( { m | sound = sound, game = { g | world = { world | rng = rng } } }
     , { acc | audio = List.reverse cmds ++ acc.audio }
     )
 
 
 startSound : Sfx -> ( Model, Acc ) -> ( Model, Acc )
 startSound sfx ( m, acc ) =
-    withSound (Sound.startSound m.game.world.gametic sfx) ( m, acc )
+    withRandomSound (Sound.startSound m.game.world.gametic sfx) ( m, acc )
+
+
+{-| A sound with no origin from the intermission, the finale or the menu (the pitch
+already drawn, or to draw now).
+-}
+ambientSound : Int -> Doom.Sound.Event -> ( Model, Acc ) -> ( Model, Acc )
+ambientSound gametic ev state =
+    case ev of
+        Doom.Sound.Start _ sfx ->
+            withRandomSound (Sound.startSound gametic sfx) state
+
+        Doom.Sound.StartAt _ sfx _ ->
+            withRandomSound (Sound.startSound gametic sfx) state
+
+        Doom.Sound.StartDrawn _ sfx byte ->
+            withSound (Sound.startSoundDrawn gametic sfx byte) state
+
+        _ ->
+            state
 
 
 updateSounds : ( Model, Acc ) -> ( Model, Acc )
@@ -684,17 +710,7 @@ gResponder ev ( m, acc ) =
             ( Finale finale, _ ) ->
                 case Finale.responder ev finale of
                     Just ( finale2, sounds ) ->
-                        List.foldl
-                            (\sound state ->
-                                case sound of
-                                    Doom.Sound.Start _ sfx ->
-                                        startSound sfx state
-
-                                    _ ->
-                                        state
-                            )
-                            ( { m | game = { g | state = Finale finale2 } }, acc )
-                            sounds
+                        List.foldl (ambientSound g.world.gametic) ( { m | game = { g | state = Finale finale2 } }, acc ) sounds
 
                     Nothing ->
                         gameKeys ev ( m, acc )
@@ -1312,21 +1328,11 @@ ticSounds gametic sounds ( m, acc ) =
     else
         case ( m.game.state, m.game.env ) of
             ( Level, Just env ) ->
-                withSound (Sound.play gametic env m.game.world sounds) ( m, acc )
+                withRandomSound (Sound.play gametic env m.game.world sounds) ( m, acc )
 
             _ ->
                 -- the intermission's and the finale's sounds have no origin
-                List.foldl
-                    (\ev state ->
-                        case ev of
-                            Doom.Sound.Start _ sfx ->
-                                withSound (Sound.startSound gametic sfx) state
-
-                            _ ->
-                                state
-                    )
-                    ( m, acc )
-                    sounds
+                List.foldl (ambientSound gametic) ( m, acc ) sounds
 
 
 {-| ST\_Ticker, AM\_Ticker and HU\_Ticker (and the automap going off when the console

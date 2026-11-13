@@ -1,7 +1,7 @@
 module Doom exposing
     ( Model, init, Options, defaultOptions, start
     , Msg(..), update, msPerTic, maxCatchUp
-    , view, settings, savedGames, finished
+    , view, settings, savedGames, saveCount, finished
     , game, wad, playing, state, error
     )
 
@@ -57,7 +57,7 @@ False makes it end the game (`finished`) as I\_Quit does.
 
 # Showing it
 
-@docs view, settings, savedGames, finished
+@docs view, settings, savedGames, saveCount, finished
 
 
 # Reading the game
@@ -232,6 +232,14 @@ settings (Model m) =
 savedGames : Model -> Dict Int Bytes
 savedGames (Model m) =
     Shell.savedGames m.shell
+
+
+{-| How many games the player has saved: store `savedGames` again when it changes
+(Elm can't compare `Bytes` for equality).
+-}
+saveCount : Model -> Int
+saveCount (Model m) =
+    Shell.saveCount m.shell
 
 
 {-| Whether the program has ended (a -playdemo demo is over, or Quit without

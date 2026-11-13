@@ -1,7 +1,7 @@
 module Doom.Shell exposing
     ( Shell, Options, defaultOptions, init
     , Output, iteration, wiping, wipeStep
-    , screen, game, menuSettings, savedGames, setSavedGames, finished
+    , screen, game, menuSettings, savedGames, saveCount, setSavedGames, finished
     )
 
 {-| The game shell (d\_main.c, with g\_game.c's G\_Responder and the parts of G\_Ticker
@@ -26,7 +26,7 @@ D\_Display's wipe loop does (the first step moves the melt by 2 tics, the others
 
 @docs Shell, Options, defaultOptions, init
 @docs Output, iteration, wiping, wipeStep
-@docs screen, game, menuSettings, savedGames, setSavedGames, finished
+@docs screen, game, menuSettings, savedGames, saveCount, setSavedGames, finished
 
 -}
 
@@ -167,6 +167,7 @@ type alias Model =
     , savegame : Maybe ( Int, String )
     , loadgame : Maybe Int
     , slots : Dict Int Bytes
+    , saveCount : Int
     , usergame : Bool
     , singledemo : Bool
     , quitToTitle : Bool
@@ -255,6 +256,7 @@ init options wad data =
             , savegame = Nothing
             , loadgame = Nothing
             , slots = options.savedGames
+            , saveCount = 0
             , usergame = False
             , singledemo = False
             , quitToTitle = options.quitToTitle
@@ -380,6 +382,14 @@ menuSettings (Shell m) =
 savedGames : Shell -> Dict Int Bytes
 savedGames (Shell m) =
     m.slots
+
+
+{-| How many games have been saved so far (G\_DoSaveGame): a host stores the slots
+again when it changes.
+-}
+saveCount : Shell -> Int
+saveCount (Shell m) =
+    m.saveCount
 
 
 {-| Hand in the host's saved game slots (read when a load or save menu opens).
@@ -1064,39 +1074,29 @@ gTicker cmd ( m0, acc0 ) =
     in
     ( { m6
         | finished = m6.finished || m6.game.error /= Nothing
-        , savegame = saveRequest m6
+        , savegame = saveRequest before.demoplayback cmd m6
       }
     , acc3
     )
 
 
-{-| BTS\_SAVEGAME in the console player's command: G\_DoSaveGame comes at the next tic.
+{-| BTS\_SAVEGAME in the console player's command for the tic (as G\_Ticker sees it,
+before P\_PlayerThink clears the special buttons): G\_DoSaveGame comes at the next
+tic. A demo's commands are its own, and none of Freedoom's save.
 -}
-saveRequest : Model -> Maybe ( Int, String )
-saveRequest m =
-    case World.player m.game.params.consoleplayer m.game.world of
-        Just p ->
-            if
-                Bitwise.and p.cmd.buttons Ticcmd.btSpecial
-                    /= 0
-                    && Bitwise.and p.cmd.buttons Ticcmd.btSpecialMask
-                    == Ticcmd.btsSaveGame
-            then
-                Just
-                    ( Bitwise.shiftRightBy Ticcmd.btsSaveShift (Bitwise.and p.cmd.buttons Ticcmd.btsSaveMask)
-                    , case m.savegame of
-                        Just ( _, d ) ->
-                            d
+saveRequest : Bool -> Ticcmd -> Model -> Maybe ( Int, String )
+saveRequest demoplayback cmd m =
+    if
+        not demoplayback
+            && Bitwise.and cmd.buttons Ticcmd.btSpecial
+            /= 0
+            && Bitwise.and cmd.buttons Ticcmd.btSpecialMask
+            == Ticcmd.btsSaveGame
+    then
+        Just ( Bitwise.shiftRightBy Ticcmd.btsSaveShift (Bitwise.and cmd.buttons Ticcmd.btsSaveMask), m.savedescription )
 
-                        Nothing ->
-                            m.savedescription
-                    )
-
-            else
-                m.savegame
-
-        Nothing ->
-            m.savegame
+    else
+        m.savegame
 
 
 {-| G\_Ticker's ga\_savegame and ga\_loadgame (unless the player is being reborn, whose
@@ -1135,6 +1135,7 @@ pendingActions ( m, acc ) =
                             | savegame = Nothing
                             , savedescription = ""
                             , slots = Dict.insert slot bytes m.slots
+                            , saveCount = m.saveCount + 1
                             , game = { g | world = world }
                           }
                         , { acc | saved = ( slot, bytes ) :: acc.saved }

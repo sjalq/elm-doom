@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - intercepts[] has room past MAXINTERCEPTS (128) and an overflow is
+//    reported on stderr (Oracle_Overflow), as for spechit in p_map.c.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -541,7 +546,7 @@ P_BlockThingsIterator
 //
 // INTERCEPT ROUTINES
 //
-intercept_t	intercepts[MAXINTERCEPTS];
+intercept_t	intercepts[ORACLE_INTERCEPTS];	// DOOM-ORACLE: was MAXINTERCEPTS
 intercept_t*	intercept_p;
 
 divline_t 	trace;
@@ -600,6 +605,8 @@ PIT_AddLineIntercepts (line_t* ld)
     }
     
 	
+    if (intercept_p - intercepts >= MAXINTERCEPTS)	// DOOM-ORACLE
+	Oracle_Overflow ("intercepts", intercept_p - intercepts + 1, ORACLE_INTERCEPTS);
     intercept_p->frac = frac;
     intercept_p->isaline = true;
     intercept_p->d.line = ld;
@@ -665,6 +672,8 @@ boolean PIT_AddThingIntercepts (mobj_t* thing)
     if (frac < 0)
 	return true;		// behind source
 
+    if (intercept_p - intercepts >= MAXINTERCEPTS)	// DOOM-ORACLE
+	Oracle_Overflow ("intercepts", intercept_p - intercepts + 1, ORACLE_INTERCEPTS);
     intercept_p->frac = frac;
     intercept_p->isaline = false;
     intercept_p->d.thing = thing;

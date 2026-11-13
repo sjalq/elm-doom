@@ -1,3 +1,10 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - spechit[] has room past MAXSPECIALCROSS (8) and an overflow is
+//    reported on stderr (Oracle_Overflow). In vanilla an overflow
+//    overwrites whatever follows the array, which depends on the binary's
+//    memory layout; here play goes on as if the limit did not exist.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -66,7 +73,8 @@ line_t*		ceilingline;
 // but don't process them until the move is proven valid
 #define MAXSPECIALCROSS		8
 
-line_t*		spechit[MAXSPECIALCROSS];
+#define ORACLE_SPECHIT		1024	// DOOM-ORACLE: room past the original 8
+line_t*		spechit[ORACLE_SPECHIT];
 int		numspechit;
 
 
@@ -239,6 +247,8 @@ boolean PIT_CheckLine (line_t* ld)
     // if contacted a special line, add it to the list
     if (ld->special)
     {
+	if (numspechit >= MAXSPECIALCROSS)	// DOOM-ORACLE
+	    Oracle_Overflow ("spechit", numspechit + 1, ORACLE_SPECHIT);
 	spechit[numspechit] = ld;
 	numspechit++;
     }

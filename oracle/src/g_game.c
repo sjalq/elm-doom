@@ -1,3 +1,11 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - G_DoPlayDemo: accepts demo version 109 (same format as 110) and a demo
+//    already in memory (oracle_demodata: a demo file or ticcmd stream);
+//    a wrong version is an error instead of a silent hang.
+//  - G_Ticker: calls Oracle_LevelTic (prints the state line) right after a
+//    P_Ticker that advanced leveltime; it only reads game state.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -70,6 +78,10 @@ rcsid[] = "$Id: g_game.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 
 #include "g_game.h"
 
+
+// DOOM-ORACLE: oracle_main.c
+extern byte*	oracle_demodata;
+void		Oracle_LevelTic (void);
 
 #define SAVEGAMESIZE	0x2c000
 #define SAVESTRINGSIZE	24
@@ -726,9 +738,15 @@ void G_Ticker (void)
     // do main actions
     switch (gamestate) 
     { 
-      case GS_LEVEL: 
-	P_Ticker (); 
-	ST_Ticker (); 
+      case GS_LEVEL:
+	{
+	    // DOOM-ORACLE: one state line per P_Ticker that ran a level tic.
+	    int oracle_leveltime = leveltime;
+	    P_Ticker ();
+	    if (leveltime != oracle_leveltime)
+		Oracle_LevelTic ();
+	}
+	ST_Ticker ();
 	AM_Ticker (); 
 	HU_Ticker ();            
 	break; 
@@ -1585,13 +1603,15 @@ void G_DoPlayDemo (void)
     int             i, episode, map; 
 	 
     gameaction = ga_nothing; 
-    demobuffer = demo_p = W_CacheLumpName (defdemoname, PU_STATIC); 
-    if ( *demo_p++ != VERSION)
-    {
-      fprintf( stderr, "Demo is from a different game version!\n");
-      gameaction = ga_nothing;
-      return;
-    }
+    // DOOM-ORACLE: a demo file or ticcmd stream already in memory, else the lump.
+    if (oracle_demodata)
+	demobuffer = demo_p = oracle_demodata;
+    else
+	demobuffer = demo_p = W_CacheLumpName (defdemoname, PU_STATIC);
+    // DOOM-ORACLE: v1.9 (109) demos have the same format as 110 ones.
+    if ( *demo_p != VERSION && *demo_p != 109)
+	I_Error ("Demo is from a different game version (%d)!", *demo_p);
+    demo_p++;
     
     skill = *demo_p++; 
     episode = *demo_p++; 

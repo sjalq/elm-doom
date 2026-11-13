@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - offsetof-style (int)&((T*)0)->f casts go through intptr_t (64-bit
+//    pointers); the values are unchanged.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -89,7 +94,7 @@ doomdata_t	reboundstore;
 //
 int NetbufferSize (void)
 {
-    return (int)&(((doomdata_t *)0)->cmds[netbuffer->numtics]); 
+    return (int)(intptr_t)&(((doomdata_t *)0)->cmds[netbuffer->numtics]); 
 }
 
 //
@@ -107,7 +112,7 @@ unsigned NetbufferChecksum (void)
     return 0;			// byte order problems
 #endif
 
-    l = (NetbufferSize () - (int)&(((doomdata_t *)0)->retransmitfrom))/4;
+    l = (NetbufferSize () - (int)(intptr_t)&(((doomdata_t *)0)->retransmitfrom))/4;
     for (i=0 ; i<l ; i++)
 	c += ((unsigned *)&netbuffer->retransmitfrom)[i] * (i+1);
 

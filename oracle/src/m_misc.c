@@ -1,3 +1,10 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - default_t.defaultvalue is intptr_t (it holds string pointers), and
+//    M_LoadDefaults only applies the built-in defaults, never a config
+//    file. Defaults are keys, mouse, volumes, screen size, chat macros:
+//    none is play state.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -226,7 +233,7 @@ typedef struct
 {
     char*	name;
     int*	location;
-    int		defaultvalue;
+    intptr_t	defaultvalue;	// DOOM-ORACLE: was int (holds string pointers)
     int		scantranslate;		// PC scan code hack
     int		untranslated;		// lousy hack
 } default_t;
@@ -254,7 +261,7 @@ default_t	defaults[] =
 
 // UNIX hack, to be removed. 
 #ifdef SNDSERV
-    {"sndserver", (int *) &sndserver_filename, (int) "sndserver"},
+    {"sndserver", (int *) &sndserver_filename, (intptr_t) "sndserver"},
     {"mb_used", &mb_used, 2},
 #endif
     
@@ -285,16 +292,16 @@ default_t	defaults[] =
 
     {"usegamma",&usegamma, 0},
 
-    {"chatmacro0", (int *) &chat_macros[0], (int) HUSTR_CHATMACRO0 },
-    {"chatmacro1", (int *) &chat_macros[1], (int) HUSTR_CHATMACRO1 },
-    {"chatmacro2", (int *) &chat_macros[2], (int) HUSTR_CHATMACRO2 },
-    {"chatmacro3", (int *) &chat_macros[3], (int) HUSTR_CHATMACRO3 },
-    {"chatmacro4", (int *) &chat_macros[4], (int) HUSTR_CHATMACRO4 },
-    {"chatmacro5", (int *) &chat_macros[5], (int) HUSTR_CHATMACRO5 },
-    {"chatmacro6", (int *) &chat_macros[6], (int) HUSTR_CHATMACRO6 },
-    {"chatmacro7", (int *) &chat_macros[7], (int) HUSTR_CHATMACRO7 },
-    {"chatmacro8", (int *) &chat_macros[8], (int) HUSTR_CHATMACRO8 },
-    {"chatmacro9", (int *) &chat_macros[9], (int) HUSTR_CHATMACRO9 }
+    {"chatmacro0", (int *) &chat_macros[0], (intptr_t) HUSTR_CHATMACRO0 },
+    {"chatmacro1", (int *) &chat_macros[1], (intptr_t) HUSTR_CHATMACRO1 },
+    {"chatmacro2", (int *) &chat_macros[2], (intptr_t) HUSTR_CHATMACRO2 },
+    {"chatmacro3", (int *) &chat_macros[3], (intptr_t) HUSTR_CHATMACRO3 },
+    {"chatmacro4", (int *) &chat_macros[4], (intptr_t) HUSTR_CHATMACRO4 },
+    {"chatmacro5", (int *) &chat_macros[5], (intptr_t) HUSTR_CHATMACRO5 },
+    {"chatmacro6", (int *) &chat_macros[6], (intptr_t) HUSTR_CHATMACRO6 },
+    {"chatmacro7", (int *) &chat_macros[7], (intptr_t) HUSTR_CHATMACRO7 },
+    {"chatmacro8", (int *) &chat_macros[8], (intptr_t) HUSTR_CHATMACRO8 },
+    {"chatmacro9", (int *) &chat_macros[9], (intptr_t) HUSTR_CHATMACRO9 }
 
 };
 
@@ -340,65 +347,20 @@ extern byte	scantokey[128];
 void M_LoadDefaults (void)
 {
     int		i;
-    int		len;
-    FILE*	f;
-    char	def[80];
-    char	strparm[100];
-    char*	newstring;
-    int		parm;
-    boolean	isstring;
-    
-    // set everything to base values
+
+    // DOOM-ORACLE: only the built-in defaults, never a config file (the
+    // oracle must not depend on ~/.doomrc). String defaults (recognised the
+    // same way M_SaveDefaults does) are stored as pointers, not truncated
+    // to int. None of these settings touch play state (keys, mouse, volume,
+    // screen size, chat macros).
     numdefaults = sizeof(defaults)/sizeof(defaults[0]);
     for (i=0 ; i<numdefaults ; i++)
-	*defaults[i].location = defaults[i].defaultvalue;
-    
-    // check for a custom default file
-    i = M_CheckParm ("-config");
-    if (i && i<myargc-1)
     {
-	defaultfile = myargv[i+1];
-	printf ("	default file: %s\n",defaultfile);
-    }
-    else
-	defaultfile = basedefault;
-    
-    // read the file in, overriding any set defaults
-    f = fopen (defaultfile, "r");
-    if (f)
-    {
-	while (!feof(f))
-	{
-	    isstring = false;
-	    if (fscanf (f, "%79s %[^\n]\n", def, strparm) == 2)
-	    {
-		if (strparm[0] == '"')
-		{
-		    // get a string default
-		    isstring = true;
-		    len = strlen(strparm);
-		    newstring = (char *) malloc(len);
-		    strparm[len-1] = 0;
-		    strcpy(newstring, strparm+1);
-		}
-		else if (strparm[0] == '0' && strparm[1] == 'x')
-		    sscanf(strparm+2, "%x", &parm);
-		else
-		    sscanf(strparm, "%i", &parm);
-		for (i=0 ; i<numdefaults ; i++)
-		    if (!strcmp(def, defaults[i].name))
-		    {
-			if (!isstring)
-			    *defaults[i].location = parm;
-			else
-			    *defaults[i].location =
-				(int) newstring;
-			break;
-		    }
-	    }
-	}
-		
-	fclose (f);
+	if (defaults[i].defaultvalue > -0xfff
+	    && defaults[i].defaultvalue < 0xfff)
+	    *defaults[i].location = (int) defaults[i].defaultvalue;
+	else
+	    *(char **) defaults[i].location = (char *) defaults[i].defaultvalue;
     }
 }
 

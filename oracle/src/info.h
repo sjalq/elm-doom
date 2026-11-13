@@ -1,3 +1,7 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - sprnames declared with its NULL terminator (see info.c).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -1156,7 +1160,7 @@ typedef struct
 } state_t;
 
 extern state_t	states[NUMSTATES];
-extern char *sprnames[NUMSPRITES];
+extern char *sprnames[NUMSPRITES+1];	// DOOM-ORACLE: was [NUMSPRITES]
 
 
 

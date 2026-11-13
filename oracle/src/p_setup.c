@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - P_GroupLines allocated the sector line-pointer array as total*4 bytes;
+//    it is total*sizeof(line_t*) (a heap overflow on 64-bit otherwise).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -533,7 +538,7 @@ void P_GroupLines (void)
     }
 	
     // build line tables for each sector	
-    linebuffer = Z_Malloc (total*4, PU_LEVEL, 0);
+    linebuffer = Z_Malloc (total*sizeof(*linebuffer), PU_LEVEL, 0);	// DOOM-ORACLE: was total*4
     sector = sectors;
     for (i=0 ; i<numsectors ; i++, sector++)
     {

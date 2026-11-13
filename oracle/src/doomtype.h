@@ -1,3 +1,7 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - #include <stdint.h> for intptr_t/uintptr_t used by the 64-bit fixes.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -23,6 +27,8 @@
 
 #ifndef __DOOMTYPE__
 #define __DOOMTYPE__
+
+#include <stdint.h>	// DOOM-ORACLE: intptr_t for 64-bit pointer casts
 
 
 #ifndef __BYTEBOOL__

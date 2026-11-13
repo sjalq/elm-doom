@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - linespeciallist[] has room past MAXLINEANIMS (64) and an overflow is
+//    reported on stderr (Oracle_Overflow), as for spechit in p_map.c.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -141,7 +146,7 @@ anim_t*		lastanim;
 #define MAXLINEANIMS            64
 
 extern  short	numlinespecials;
-extern  line_t*	linespeciallist[MAXLINEANIMS];
+extern  line_t*	linespeciallist[];	// DOOM-ORACLE: was [MAXLINEANIMS]
 
 
 
@@ -1232,7 +1237,8 @@ int EV_DoDonut(line_t*	line)
 //  that spawn thinkers
 //
 short		numlinespecials;
-line_t*		linespeciallist[MAXLINEANIMS];
+#define ORACLE_LINEANIMS	1024	// DOOM-ORACLE: room past the original 64
+line_t*		linespeciallist[ORACLE_LINEANIMS];
 
 
 // Parses command line parameters.
@@ -1340,6 +1346,9 @@ void P_SpawnSpecials (void)
 	{
 	  case 48:
 	    // EFFECT FIRSTCOL SCROLL+
+	    if (numlinespecials >= MAXLINEANIMS)	// DOOM-ORACLE
+		Oracle_Overflow ("linespeciallist", numlinespecials + 1,
+				 ORACLE_LINEANIMS);
 	    linespeciallist[numlinespecials] = &lines[i];
 	    numlinespecials++;
 	    break;

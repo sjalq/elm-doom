@@ -1,3 +1,12 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - -iwad <file> (IdentifyVersion), game mode taken from the WAD's maps
+//    (E4M1 -> retail, as Ultimate Doom/Freedoom Phase 1): only picks which
+//    WAD is loaded and the mode the original would have set for it.
+//  - D_DoomLoop is the original -singletics loop without display, sound or
+//    real-time calls: the same G_Ticker sequence, one tic per iteration.
+//  - statcopy cast through intptr_t (64-bit pointer size; never used).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -353,56 +362,25 @@ extern  boolean         demorecording;
 
 void D_DoomLoop (void)
 {
+    // DOOM-ORACLE: headless loop. Exactly the -singletics branch of the
+    // original loop (one G_Ticker per iteration, ticdup 1, no net), minus
+    // everything that only drives the display, sound and real time:
+    // I_InitGraphics, I_StartFrame, S_UpdateSounds, D_Display, I_*Sound.
+    // The game ends through G_CheckDemoStatus -> I_Quit (exit 0).
     if (demorecording)
 	G_BeginRecording ();
-		
-    if (M_CheckParm ("-debugfile"))
-    {
-	char    filename[20];
-	sprintf (filename,"debug%i.txt",consoleplayer);
-	printf ("debug output to: %s\n",filename);
-	debugfile = fopen (filename,"w");
-    }
-	
-    I_InitGraphics ();
 
     while (1)
     {
-	// frame syncronous IO operations
-	I_StartFrame ();                
-	
-	// process one or more tics
-	if (singletics)
-	{
-	    I_StartTic ();
-	    D_ProcessEvents ();
-	    G_BuildTiccmd (&netcmds[consoleplayer][maketic%BACKUPTICS]);
-	    if (advancedemo)
-		D_DoAdvanceDemo ();
-	    M_Ticker ();
-	    G_Ticker ();
-	    gametic++;
-	    maketic++;
-	}
-	else
-	{
-	    TryRunTics (); // will run at least one tic
-	}
-		
-	S_UpdateSounds (players[consoleplayer].mo);// move positional sounds
-
-	// Update display, next frame, with current state.
-	D_Display ();
-
-#ifndef SNDSERV
-	// Sound mixing for the buffer is snychronous.
-	I_UpdateSound();
-#endif	
-	// Synchronous sound output is explicitly called.
-#ifndef SNDINTR
-	// Update sound output.
-	I_SubmitSound();
-#endif
+	I_StartTic ();
+	D_ProcessEvents ();
+	G_BuildTiccmd (&netcmds[consoleplayer][maketic%BACKUPTICS]);
+	if (advancedemo)
+	    D_DoAdvanceDemo ();
+	M_Ticker ();
+	G_Ticker ();
+	gametic++;
+	maketic++;
     }
 }
 
@@ -571,6 +549,19 @@ void IdentifyVersion (void)
     char*	doom2fwad;
     char*	plutoniawad;
     char*	tntwad;
+
+    // DOOM-ORACLE: -iwad <file>; the game mode is read from the WAD's
+    // lumps in D_DoomMain once it is loaded. Checked first, before the
+    // original's (one byte too small) name buffers below are filled.
+    {
+	int p = M_CheckParm ("-iwad");
+	if (p && p < myargc-1)
+	{
+	    gamemode = indetermined;
+	    D_AddFile (myargv[p+1]);
+	    return;
+	}
+    }
 
 #ifdef NORMALUNIX
     char *home;
@@ -1019,6 +1010,21 @@ void D_DoomMain (void)
 
     printf ("W_Init: Init WADfiles.\n");
     W_InitMultipleFiles (wadfiles);
+
+    // DOOM-ORACLE: game mode of an -iwad, from its maps.
+    if (gamemode == indetermined)
+    {
+	if (W_CheckNumForName ("MAP01") >= 0)
+	    gamemode = commercial;
+	else if (W_CheckNumForName ("E4M1") >= 0)
+	    gamemode = retail;
+	else if (W_CheckNumForName ("E3M1") >= 0)
+	    gamemode = registered;
+	else
+	    gamemode = shareware;
+	fprintf (stderr, "doom-oracle: game mode %d\n", gamemode);
+    }
+
     
 
     // Check for -file in shareware
@@ -1119,7 +1125,7 @@ void D_DoomMain (void)
 	// for statistics driver
 	extern  void*	statcopy;                            
 
-	statcopy = (void*)atoi(myargv[p+1]);
+	statcopy = (void*)(intptr_t)atoi(myargv[p+1]);
 	printf ("External statistics registered.\n");
     }
     

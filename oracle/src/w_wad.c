@@ -1,3 +1,7 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - <malloc.h> (absent on macOS) replaced by <stdlib.h>.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -31,7 +35,7 @@ rcsid[] = "$Id: w_wad.c,v 1.5 1997/02/03 16:47:57 b1 Exp $";
 #include <sys/types.h>
 #include <string.h>
 #include <unistd.h>
-#include <malloc.h>
+#include <stdlib.h>	// DOOM-ORACLE: was <malloc.h> (absent on macOS)
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <alloca.h>

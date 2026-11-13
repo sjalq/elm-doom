@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - <values.h> (Linux only) replaced by doomtype.h, which defines the same
+//    32-bit MAXINT/MININT.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -23,7 +28,7 @@
 #ifndef __M_BBOX__
 #define __M_BBOX__
 
-#include <values.h>
+#include "doomtype.h"	// DOOM-ORACLE: was <values.h> (absent on macOS); same MAXINT/MININT
 
 #include "m_fixed.h"
 

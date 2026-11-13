@@ -1,3 +1,11 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - Z_Malloc rounds sizes to 8 bytes instead of 4, so blocks holding
+//    64-bit pointers stay aligned (zone addresses never reach play).
+//  - Z_ChangeTag2 compares the owner pointer as uintptr_t (was unsigned).
+//  - With -DORACLE_MALLOC_ZONE (make check only) a malloc-backed zone with
+//    the same owner/tag bookkeeping, so AddressSanitizer sees every block.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -27,6 +35,99 @@ rcsid[] = "$Id: z_zone.c,v 1.4 1997/02/03 16:47:58 b1 Exp $";
 #include "z_zone.h"
 #include "i_system.h"
 #include "doomdef.h"
+
+
+#ifdef ORACLE_MALLOC_ZONE
+//
+// DOOM-ORACLE: optional malloc-backed zone (make check builds with it,
+// together with AddressSanitizer, so any overflow of a zone block is
+// caught). Same owner/tag bookkeeping as the real zone; purgable blocks
+// are simply never purged. The default build uses the original zone.
+//
+#include <stdlib.h>
+
+#define ZONEID	0x1d4a11
+
+static memblock_t	oracle_blocks;
+
+void Z_Init (void)
+{
+    oracle_blocks.next = oracle_blocks.prev = &oracle_blocks;
+}
+
+void* Z_Malloc (int size, int tag, void* user)
+{
+    memblock_t*	block;
+
+    if (tag >= PU_PURGELEVEL && !user)
+	I_Error ("Z_Malloc: an owner is required for purgable blocks");
+    block = malloc (sizeof(memblock_t) + size);
+    if (!block)
+	I_Error ("Z_Malloc: failed on allocation of %i bytes", size);
+    block->size = size + sizeof(memblock_t);
+    block->tag = tag;
+    block->id = ZONEID;
+    block->next = &oracle_blocks;
+    block->prev = oracle_blocks.prev;
+    block->prev->next = block;
+    oracle_blocks.prev = block;
+    if (user)
+    {
+	block->user = user;
+	*(void **)user = (void *) (block + 1);
+    }
+    else
+	block->user = (void *)2;
+    return (void *) (block + 1);
+}
+
+void Z_Free (void* ptr)
+{
+    memblock_t*	block = (memblock_t *) ptr - 1;
+
+    if (block->id != ZONEID)
+	I_Error ("Z_Free: freed a pointer without ZONEID");
+    if (block->user > (void **)0x100)
+	*block->user = 0;
+    block->id = 0;
+    block->prev->next = block->next;
+    block->next->prev = block->prev;
+    // Not given back to malloc: the game reads freed blocks right after
+    // Z_Free (P_RunThinkers takes currentthinker->next of a thinker it has
+    // just freed), which the real zone allows because Z_Free leaves the
+    // block's data untouched until a later Z_Malloc reuses it.
+}
+
+void Z_FreeTags (int lowtag, int hightag)
+{
+    memblock_t*	block;
+    memblock_t*	next;
+
+    for (block = oracle_blocks.next ; block != &oracle_blocks ; block = next)
+    {
+	next = block->next;
+	if (block->tag >= lowtag && block->tag <= hightag)
+	    Z_Free (block + 1);
+    }
+}
+
+void Z_ChangeTag2 (void* ptr, int tag)
+{
+    memblock_t*	block = (memblock_t *) ptr - 1;
+
+    if (block->id != ZONEID)
+	I_Error ("Z_ChangeTag: freed a pointer without ZONEID");
+    if (tag >= PU_PURGELEVEL && (uintptr_t)block->user < 0x100)
+	I_Error ("Z_ChangeTag: an owner is required for purgable blocks");
+    block->tag = tag;
+}
+
+void Z_DumpHeap (int lowtag, int hightag) {}
+void Z_FileDumpHeap (FILE* f) {}
+void Z_CheckHeap (void) {}
+int Z_FreeMemory (void) { return 0; }
+
+#else	// the original zone
 
 
 //
@@ -192,7 +293,7 @@ Z_Malloc
     memblock_t* newblock;
     memblock_t*	base;
 
-    size = (size + 3) & ~3;
+    size = (size + 7) & ~7;	// DOOM-ORACLE: was 4-byte rounding; 8 keeps 64-bit pointers aligned
     
     // scan through the block list,
     // looking for the first free block
@@ -437,7 +538,7 @@ Z_ChangeTag2
     if (block->id != ZONEID)
 	I_Error ("Z_ChangeTag: freed a pointer without ZONEID");
 
-    if (tag >= PU_PURGELEVEL && (unsigned)block->user < 0x100)
+    if (tag >= PU_PURGELEVEL && (uintptr_t)block->user < 0x100)
 	I_Error ("Z_ChangeTag: an owner is required for purgable blocks");
 
     block->tag = tag;
@@ -465,3 +566,4 @@ int Z_FreeMemory (void)
     return free;
 }
 
+#endif	// ORACLE_MALLOC_ZONE

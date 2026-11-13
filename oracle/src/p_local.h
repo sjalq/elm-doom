@@ -1,3 +1,7 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - intercepts[] has room past MAXINTERCEPTS (128); see p_maputl.c.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -153,7 +157,13 @@ typedef struct
 
 #define MAXINTERCEPTS	128
 
-extern intercept_t	intercepts[MAXINTERCEPTS];
+// DOOM-ORACLE: the array has room past the original 128; going past 128
+// (which in vanilla overwrites whatever follows the array) is reported on
+// stderr by Oracle_Overflow instead of corrupting memory.
+#define ORACLE_INTERCEPTS	8192
+void Oracle_Overflow (const char* what, int count, int capacity);
+
+extern intercept_t	intercepts[ORACLE_INTERCEPTS];
 extern intercept_t*	intercept_p;
 
 typedef boolean (*traverser_t) (intercept_t *in);

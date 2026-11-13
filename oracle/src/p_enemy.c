@@ -1,3 +1,7 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - extern spechit[] without a size (the array is larger, see p_map.c).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -266,7 +270,7 @@ fixed_t yspeed[8] = {0,47000,FRACUNIT,47000,0,-47000,-FRACUNIT,-47000};
 
 #define MAXSPECIALCROSS	8
 
-extern	line_t*	spechit[MAXSPECIALCROSS];
+extern	line_t*	spechit[];	// DOOM-ORACLE: was [MAXSPECIALCROSS]
 extern	int	numspechit;
 
 boolean P_Move (mobj_t*	actor)

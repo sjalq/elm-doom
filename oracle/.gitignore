@@ -1,0 +1,7 @@
+build/
+build-san/
+doom-oracle
+doom-oracle-san
+out/
+*.wad
+__pycache__/

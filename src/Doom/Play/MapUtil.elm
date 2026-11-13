@@ -1,4 +1,4 @@
-module Doom.Play.MapUtil exposing (Intercept, InterceptTarget(..), ptAddLines, ptAddThings, ptEarlyOut, aproxDistance, pointOnLineSide, boxOnLineSide, pointOnDivlineSide, makeDivline, interceptVector, lineOpening, unsetThingPosition, setThingPosition, blockLinesIterator, blockThingsIterator, pathTraverse)
+module Doom.Play.MapUtil exposing (Intercept, InterceptTarget(..), blockmap, ptAddLines, ptAddThings, ptEarlyOut, aproxDistance, pointOnLineSide, boxOnLineSide, pointOnDivlineSide, makeDivline, interceptVector, lineOpening, unsetThingPosition, setThingPosition, blockLinesIterator, blockThingsIterator, pathTraverse)
 
 {-| Movement and collision helpers (p\_maputl.c): distances, which side of a line a point
 or box is on, line openings, linking things into the blockmap and their sector, and the
@@ -8,7 +8,7 @@ on.
 The C source's iterators take a function pointer and stop when it returns false; here
 the function also gets and gives back the `World`.
 
-@docs Intercept, InterceptTarget, ptAddLines, ptAddThings, ptEarlyOut, aproxDistance, pointOnLineSide, boxOnLineSide, pointOnDivlineSide, makeDivline, interceptVector, lineOpening, unsetThingPosition, setThingPosition, blockLinesIterator, blockThingsIterator, pathTraverse
+@docs Intercept, InterceptTarget, blockmap, ptAddLines, ptAddThings, ptEarlyOut, aproxDistance, pointOnLineSide, boxOnLineSide, pointOnDivlineSide, makeDivline, interceptVector, lineOpening, unsetThingPosition, setThingPosition, blockLinesIterator, blockThingsIterator, pathTraverse
 
 -}
 
@@ -286,13 +286,32 @@ lineOpening env lineId world =
 -- THING POSITIONS
 
 
-{-| The blockmap cell index a point is in, if it is on the map.
+{-| The level's blockmap with the origin and size the game now reads (`World.bmap`):
+the lump's, unless an intercepts overrun has written over them.
 -}
-blockIndex : Env -> Fixed -> Fixed -> Maybe Int
-blockIndex env x y =
+blockmap : Env -> World -> Level.Blockmap
+blockmap env world =
     let
         bm =
             env.level.blockmap
+
+        h =
+            world.bmap
+    in
+    if h.orgx == bm.orgx && h.orgy == bm.orgy && h.width == bm.width && h.height == bm.height then
+        bm
+
+    else
+        { bm | orgx = h.orgx, orgy = h.orgy, width = h.width, height = h.height }
+
+
+{-| The blockmap cell index a point is in, if it is on the map.
+-}
+blockIndex : Env -> World -> Fixed -> Fixed -> Maybe Int
+blockIndex env world x y =
+    let
+        bm =
+            blockmap env world
 
         bx =
             Int32.shiftRight Defs.mapBlockShift (Int32.sub x bm.orgx)
@@ -339,7 +358,7 @@ unsetThingPosition env id world =
                 withoutSector
 
             else
-                case blockIndex env thing.x thing.y of
+                case blockIndex env world thing.x thing.y of
                     Just cell ->
                         { withoutSector
                             | blocklinks = updateArray cell (List.filter ((/=) id)) withoutSector.blocklinks
@@ -381,7 +400,7 @@ setThingPosition env id world =
                 inSector
 
             else
-                case blockIndex env thing.x thing.y of
+                case blockIndex env world thing.x thing.y of
                     Just cell ->
                         { inSector | blocklinks = updateArray cell ((::) id) inSector.blocklinks }
 
@@ -415,7 +434,7 @@ blockLinesFold : Env -> Int -> Int -> (LineId -> ( a, World ) -> ( Bool, ( a, Wo
 blockLinesFold env x y func acc =
     let
         bm =
-            env.level.blockmap
+            blockmap env (Tuple.second acc)
 
         go lines ( a, world ) =
             case lines of
@@ -472,7 +491,7 @@ blockThingsFold : Env -> Int -> Int -> (ThinkerId -> ( a, World ) -> ( Bool, ( a
 blockThingsFold env x y func ( a0, world0 ) =
     let
         bm =
-            env.level.blockmap
+            blockmap env world0
 
         go cell things ( a, world ) =
             case things of
@@ -519,7 +538,7 @@ successors env cell id before world =
             let
                 elsewhere =
                     World.mobj id world
-                        |> Maybe.andThen (\m -> blockIndex env m.x m.y)
+                        |> Maybe.andThen (\m -> blockIndex env world m.x m.y)
                         |> Maybe.andThen (\c -> after id (cellThings c world) |> Maybe.map (Tuple.pair c))
             in
             Maybe.withDefault ( cell, before ) elsewhere
@@ -596,7 +615,7 @@ addLineIntercept env lineId ( intercepts, world ) =
             ( False, ( intercepts, world ) )
 
         else
-            ( True, ( { frac = frac, target = InterceptLine lineId } :: intercepts, world ) )
+            addIntercept { frac = frac, target = InterceptLine lineId } ( intercepts, world )
 
 
 {-| PIT\_AddThingIntercepts: add the thing if the trace crosses its corner-to-corner
@@ -648,7 +667,145 @@ addThingIntercept id ( intercepts, world ) =
                     ( True, ( intercepts, world ) )
 
                 else
-                    ( True, ( { frac = frac, target = InterceptThing id } :: intercepts, world ) )
+                    addIntercept { frac = frac, target = InterceptThing id } ( intercepts, world )
+
+
+{-| `*intercept_p++ = ...`, with the DOS executable's overrun past the array.
+-}
+addIntercept : Intercept -> ( List Intercept, World ) -> ( Bool, ( List Intercept, World ) )
+addIntercept inter ( intercepts, world ) =
+    ( True, ( inter :: intercepts, interceptsOverrun (List.length intercepts) inter world ) )
+
+
+{-| chocolate-doom p\_maputl.c:InterceptsOverrun, for intercept number `num` (0 the
+first): from 130 on, the intercept's three 4-byte fields (`frac`, `isaline`, the line
+or thing pointer) land, 12 bytes per intercept counted from the 130th, on what follows
+`intercepts[]` in the DOS executable's memory (Chocolate's intercepts\_overrun table):
+`lowfloor` at byte 12, `openbottom` 16, `opentop` 20, `openrange` 24, `bulletslope`
+160, `playerstarts` (as 20 shorts, low half first) 176 to 215, `bmapwidth` 220,
+`bmaporgx` 228, `bmaporgy` 232, `bmapheight` 240; the other bytes up to 244 hold
+variables Chocolate doesn't emulate, and nothing past 244 is written.
+
+The pointer is a host address in Chocolate; here a line's is its address in doom2.exe's
+memory as SpechitOverrun models it (0x01C09C98 plus 0x3E per line number), a thing's 0.
+After `bmapwidth`.. are changed, cells off the blockmap the lump has read as empty and
+take no things (the DOS game reads and writes past its arrays there).
+
+-}
+interceptsOverrun : Int -> Intercept -> World -> World
+interceptsOverrun num inter world =
+    if num <= 128 then
+        world
+
+    else
+        let
+            location =
+                (num - 129) * 12
+
+            ( isaline, pointer ) =
+                case inter.target of
+                    InterceptLine l ->
+                        ( 1, Int32.wrap (0x01C09C98 + l * 0x3E) )
+
+                    InterceptThing _ ->
+                        ( 0, 0 )
+        in
+        world
+            |> memoryOverrun location inter.frac
+            |> memoryOverrun (location + 4) isaline
+            |> memoryOverrun (location + 8) pointer
+
+
+{-| InterceptsMemoryOverrun: write a 4-byte value at `location` bytes past the array.
+-}
+memoryOverrun : Int -> Int -> World -> World
+memoryOverrun location value world =
+    let
+        scratch f =
+            World.setScratch f world
+
+        bmap f =
+            { world | bmap = f world.bmap }
+    in
+    if location == 12 then
+        scratch (\s -> { s | lowfloor = value })
+
+    else if location == 16 then
+        scratch (\s -> { s | openbottom = value })
+
+    else if location == 20 then
+        scratch (\s -> { s | opentop = value })
+
+    else if location == 24 then
+        scratch (\s -> { s | openrange = value })
+
+    else if location == 160 then
+        scratch (\s -> { s | bulletslope = value })
+
+    else if location >= 176 && location < 216 then
+        let
+            index =
+                (location - 176) // 2
+        in
+        world
+            |> setPlayerStartShort index (Bitwise.and value 0xFFFF)
+            |> setPlayerStartShort (index + 1) (Bitwise.and (Bitwise.shiftRightBy 16 value) 0xFFFF)
+
+    else if location == 220 then
+        bmap (\h -> { h | width = value })
+
+    else if location == 228 then
+        bmap (\h -> { h | orgx = value })
+
+    else if location == 232 then
+        bmap (\h -> { h | orgy = value })
+
+    else if location == 240 then
+        bmap (\h -> { h | height = value })
+
+    else
+        world
+
+
+{-| `((short *) playerstarts)[index] = bits`: mapthing\_t is five shorts (x, y, angle,
+type, options); a start the map never set is all zeroes.
+-}
+setPlayerStartShort : Int -> Int -> World -> World
+setPlayerStartShort index bits world =
+    let
+        value =
+            if bits >= 0x8000 then
+                bits - 0x00010000
+
+            else
+                bits
+
+        player =
+            index // 5
+
+        start =
+            Array.get player world.playerStarts
+                |> Maybe.andThen identity
+                |> Maybe.withDefault { x = 0, y = 0, angle = 0, type_ = 0, options = 0 }
+
+        changed =
+            case modBy 5 index of
+                0 ->
+                    { start | x = value }
+
+                1 ->
+                    { start | y = value }
+
+                2 ->
+                    { start | angle = value }
+
+                3 ->
+                    { start | type_ = value }
+
+                _ ->
+                    { start | options = value }
+    in
+    { world | playerStarts = Array.set player (Just changed) world.playerStarts }
 
 
 {-| P\_TraverseIntercepts: call func on the intercepts nearest first, up to `maxfrac`.
@@ -711,14 +868,16 @@ traverseIntercepts intercepts func maxfrac world =
 {-| P\_PathTraverse x1 y1 x2 y2 flags trav: the lines and things crossed going from (x1, y1) to (x2, y2), nearest first. Sets `trace` in the scratch.
 
 The C source keeps at most MAXINTERCEPTS (128) intercepts and writes past its array
-beyond that; here there is no limit.
+beyond that; here the list has no limit, and from the 130th on each intercept added
+also writes over the variables the DOS executable has after the array, see
+`interceptsOverrun`.
 
 -}
 pathTraverse : Env -> Fixed -> Fixed -> Fixed -> Fixed -> Int -> (Intercept -> World -> ( Bool, World )) -> World -> ( Bool, World )
 pathTraverse env x1in y1in x2in y2in flags trav world0 =
     let
         bm =
-            env.level.blockmap
+            blockmap env world0
 
         offBlockEdge v org =
             -- don't side exactly on a line

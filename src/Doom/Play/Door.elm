@@ -465,25 +465,40 @@ isRaiseDoor special =
 {-| A raise door already moving: closing turns to opening; otherwise a player makes
 it start closing.
 
-The C source assumes `specialdata` is a door. When it is a lift or floor moving the
-same sector, C writes `direction` into whatever field of that thinker lies where a
-door's `direction` would; this port leaves such a thinker alone (it still returns
-without starting a door, as C does).
+The C source assumes `specialdata` is a door. When it is a lift, floor or ceiling
+moving the same sector, `door->direction` reads and writes whatever field of that
+thinker lies at the offset of a door's `direction` (28) in the DOS executable's 32-bit
+layout: a lift's `wait`, a floor's `newspecial`, a ceiling's `speed` (chocolate-doom
+p\_doors.c:EV\_VerticalDoor sets a lift's `wait` to -1 for this reason; linuxdoom-1.10
+on 64-bit hits another field).
 
 -}
 reverseDoor : ThinkerId -> Bool -> World -> World
 reverseDoor doorId isPlayer world =
-    case World.thinker doorId world of
-        Just (DoorThinker door) ->
-            if door.direction == -1 then
-                save doorId { door | direction = 1 } world
+    let
+        reverse direction set =
+            if direction == -1 then
+                World.setThinker doorId (set 1) world
 
             else if not isPlayer then
                 -- JDC: bad guys never close doors
                 world
 
             else
-                save doorId { door | direction = -1 } world
+                World.setThinker doorId (set -1) world
+    in
+    case World.thinker doorId world of
+        Just (DoorThinker door) ->
+            reverse door.direction (\d -> DoorThinker { door | direction = d })
+
+        Just (PlatThinker plat) ->
+            reverse plat.wait (\d -> PlatThinker { plat | wait = d })
+
+        Just (FloorThinker floor) ->
+            reverse floor.newspecial (\d -> FloorThinker { floor | newspecial = d })
+
+        Just (CeilingThinker ceiling) ->
+            reverse ceiling.speed (\d -> CeilingThinker { ceiling | speed = d })
 
         _ ->
             world

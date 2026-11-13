@@ -1739,7 +1739,7 @@ vileChase env id world =
                         Int32.add actor.y (Int32.mul speed (yspeed actor.movedir))
 
                     bm =
-                        env.level.blockmap
+                        MapUtil.blockmap env world
 
                     cell org v delta =
                         Int32.shiftRight Defs.mapBlockShift (Int32.add (Int32.sub v org) delta)

@@ -5,6 +5,11 @@
 //    overwrites whatever follows the array, which depends on the binary's
 //    memory layout; here play goes on as if the limit did not exist.
 
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - PIT_CheckLine: the DOS spechit overrun (9th..14th special line
+//    overwrites tmbbox, crushchange, nofit), see chocolate-doom SpechitOverrun.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -75,6 +80,10 @@ line_t*		ceilingline;
 
 #define ORACLE_SPECHIT		1024	// DOOM-ORACLE: room past the original 8
 line_t*		spechit[ORACLE_SPECHIT];
+
+// DOOM-ORACLE: for the DOS spechit overrun in PIT_CheckLine (defined below).
+extern boolean	crushchange;
+extern boolean	nofit;
 int		numspechit;
 
 
@@ -251,6 +260,28 @@ boolean PIT_CheckLine (line_t* ld)
 	    Oracle_Overflow ("spechit", numspechit + 1, ORACLE_SPECHIT);
 	spechit[numspechit] = ld;
 	numspechit++;
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom p_map.c:
+	// SpechitOverrun): past MAXSPECIALCROSS the DOS executable writes the
+	// line's address (in doom2.exe's memory: DEFAULT_SPECHIT_MAGIC plus
+	// sizeof line_t, 0x3E, per line) over the variables after spechit[].
+	if (numspechit > MAXSPECIALCROSS)
+	{
+	    unsigned int addr = 0x01C09C98u + (unsigned int) (ld - lines) * 0x3E;
+	    switch (numspechit)
+	    {
+	      case 9: case 10: case 11: case 12:
+		tmbbox[numspechit-9] = (fixed_t) addr;
+		break;
+	      case 13:
+		crushchange = (boolean) addr;
+		break;
+	      case 14:
+		nofit = (boolean) addr;
+		break;
+	      default:
+		break;
+	    }
+	}
     }
 
     return true;

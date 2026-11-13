@@ -234,8 +234,12 @@ flatNumbers firstflat wad =
 
 
 {-| P\_InitSwitchList: the (off, on) texture pairs of the switches the game mode has.
-As in linuxdoom-1.10, only the registered game gets episode 2 and 3's switches; the
-retail game (The Ultimate Doom) only gets the shareware ones.
+The registered and retail games get episode 2 and 3's switches too, as the DOS
+executables do (chocolate-doom p\_switch.c:P\_InitSwitchList); linuxdoom-1.10 only
+gave them to the registered game, so a retail IWAD (The Ultimate Doom, Freedoom Phase
+
+1.  had none of SW1BLUE..SW1WOOD.
+
 -}
 initSwitchList : Data -> Array Int
 initSwitchList data =
@@ -243,6 +247,9 @@ initSwitchList data =
         episode =
             case data.gameMode of
                 Registered ->
+                    2
+
+                Retail ->
                     2
 
                 Commercial ->

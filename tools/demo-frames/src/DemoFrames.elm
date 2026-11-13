@@ -127,7 +127,7 @@ run env =
                                         Time.now
                                             |> Task.andThen
                                                 (\t0 ->
-                                                    loop env out opts { opts | last = last } (Game.new wad data (Game.playDemo d)) (RenderData.load wad data) (Video.blank 0) 0 [] 0
+                                                    loop env out opts { opts | last = last } (Game.new wad data (Game.playDemo d)) (RenderData.load wad data) (Video.blank 0) 0 [] ( 0, 0 )
                                                         |> Task.andThen
                                                             (\( frames, drawMs ) ->
                                                                 Time.now
@@ -181,10 +181,10 @@ noCmds =
 {-| Run tics, drawing after each one in a level; `raw` collects the frame records
 (newest first) until they are written out.
 -}
-loop : System.Environment -> String -> Opts -> Opts -> Game -> RenderData -> Framebuffer -> Int -> List Bytes -> Int -> Task String ( Int, Int )
-loop env out opts0 opts game rd fb tic raw drawMs =
+loop : System.Environment -> String -> Opts -> Opts -> Game -> RenderData -> Framebuffer -> Int -> List Bytes -> ( Int, Int ) -> Task String ( Int, Int )
+loop env out opts0 opts game rd fb tic raw ( drawn, drawMs ) =
     if tic >= opts.last || game.error /= Nothing || (game.demo == Nothing && game.state == Game.DemoScreen && game.action == Game.NoAction) then
-        writeRaw opts raw |> Task.map (\_ -> ( List.length raw, drawMs ))
+        writeRaw opts raw |> Task.map (\_ -> ( drawn, drawMs ))
 
     else
         let
@@ -196,7 +196,7 @@ loop env out opts0 opts game rd fb tic raw drawMs =
         in
         case Game.playing next of
             Nothing ->
-                loop env out opts0 opts next rd fb gametic raw drawMs
+                loop env out opts0 opts next rd fb gametic raw ( drawn, drawMs )
 
             Just ( gameEnv, world ) ->
                 Time.now
@@ -246,7 +246,7 @@ loop env out opts0 opts game rd fb tic raw drawMs =
                                                 else
                                                     Task.succeed ()
                                         in
-                                        png |> Task.andThen (\_ -> loop env out opts0 opts next rd2 fb2 gametic raw2 ms)
+                                        png |> Task.andThen (\_ -> loop env out opts0 opts next rd2 fb2 gametic raw2 ( drawn + 1, ms ))
                                     )
                         )
 

@@ -69,6 +69,7 @@ type alias Ctx =
     , low : Bool
     , wx : Int
     , wy : Int
+    , columnofs : Array Int
     , basexscale : Int
     , baseyscale : Int
     }
@@ -217,8 +218,22 @@ walk (RenderData static cache0) env world options =
                         Nothing ->
                             Internal.viewSize blocks detail
 
+                -- R_InitBuffer fills columnofs[] for the view's width; what lies
+                -- past it is left from wider views before (zero at first)
+                columnofs =
+                    case cache0.view of
+                        Just v ->
+                            if v.blocks == blocks && v.detailshift == detail then
+                                cache0.columnofs
+
+                            else
+                                initBuffer vs cache0.columnofs
+
+                        Nothing ->
+                            initBuffer vs cache0.columnofs
+
                 cache1 =
-                    { cache0 | view = Just vs }
+                    { cache0 | view = Just vs, columnofs = columnofs }
 
                 viewangle =
                     mo.angle
@@ -269,6 +284,7 @@ walk (RenderData static cache0) env world options =
                     , low = detail == 1
                     , wx = vs.viewwindowx
                     , wy = vs.viewwindowy
+                    , columnofs = columnofs
                     , basexscale = Fixed.div (Tables.finecosine fine) vs.centerxfrac
                     , baseyscale = Int32.neg (Fixed.div (Tables.finesine fine) vs.centerxfrac)
                     }
@@ -320,6 +336,19 @@ walk (RenderData static cache0) env world options =
 
         _ ->
             Nothing
+
+
+initBuffer : ViewSize -> Array Int -> Array Int
+initBuffer vs columnofs =
+    Array.indexedMap
+        (\i c ->
+            if i < vs.scaledviewwidth then
+                vs.viewwindowx + i
+
+            else
+                c
+        )
+        columnofs
 
 
 colormap : Static -> Int -> Array Int
@@ -1571,7 +1600,7 @@ segLoop ctx w x scale topfrac bottomfrac pixhigh pixlow acc =
 
             Nothing ->
                 let
-                    ( cc2, ops1, pixhigh2 ) =
+                    ( ( cc2, ops1, pixhigh2 ), dcx ) =
                         case w.top of
                             Just tex ->
                                 let
@@ -1586,17 +1615,21 @@ segLoop ctx w x scale topfrac bottomfrac pixhigh pixlow acc =
                                             mid0
                                 in
                                 if mid >= yl then
-                                    ( mid, drawColumn ctx x yl mid w.toptexturemid iscale (column tex texturecolumn) cmap acc.ops, Int32.add pixhigh w.pixhighstep )
+                                    let
+                                        ( drawn, dcx1 ) =
+                                            drawColumnX ctx x yl mid w.toptexturemid iscale (column tex texturecolumn) cmap acc.ops
+                                    in
+                                    ( ( mid, drawn, Int32.add pixhigh w.pixhighstep ), dcx1 )
 
                                 else
-                                    ( yl - 1, acc.ops, Int32.add pixhigh w.pixhighstep )
+                                    ( ( yl - 1, acc.ops, Int32.add pixhigh w.pixhighstep ), x )
 
                             Nothing ->
                                 if w.markceiling then
-                                    ( yl - 1, acc.ops, pixhigh )
+                                    ( ( yl - 1, acc.ops, pixhigh ), x )
 
                                 else
-                                    ( cc, acc.ops, pixhigh )
+                                    ( ( cc, acc.ops, pixhigh ), x )
 
                     ( fc2, ops2, pixlow2 ) =
                         case w.bottom of
@@ -1613,7 +1646,7 @@ segLoop ctx w x scale topfrac bottomfrac pixhigh pixlow acc =
                                             mid0
                                 in
                                 if mid <= yh then
-                                    ( mid, drawColumn ctx x mid yh w.bottomtexturemid iscale (column tex texturecolumn) cmap ops1, Int32.add pixlow w.pixlowstep )
+                                    ( mid, drawColumn ctx dcx mid yh w.bottomtexturemid iscale (column tex texturecolumn) cmap ops1, Int32.add pixlow w.pixlowstep )
 
                                 else
                                     ( yh + 1, ops1, Int32.add pixlow w.pixlowstep )
@@ -1650,12 +1683,28 @@ yl to yh of view column x.
 -}
 drawColumn : Ctx -> Int -> Int -> Int -> Int -> Int -> Source -> Array Int -> Array (List Op) -> Array (List Op)
 drawColumn ctx x yl yh texturemid iscale source cmap ops =
+    Tuple.first (drawColumnX ctx x yl yh texturemid iscale source cmap ops)
+
+
+{-| colfunc with C's global `dc_x`: also gives `dc_x` afterwards. R\_DrawColumnLow
+doubles `dc_x` in place (`dc_x <<= 1`) and leaves it so, and the callers that draw
+more than once a column (R\_RenderSegLoop's upper then lower wall,
+R\_DrawMaskedColumn's posts, the masked loops counting with `dc_x`) go on with the
+doubled value, as the original's low detail does. Screen columns come from
+`columnofs[]`, which only R\_InitBuffer's width is filled in. A column RANGECHECK
+would stop the game for (`dc_x` 320 or more) is not drawn.
+-}
+drawColumnX : Ctx -> Int -> Int -> Int -> Int -> Int -> Source -> Array Int -> Array (List Op) -> ( Array (List Op), Int )
+drawColumnX ctx x yl yh texturemid iscale source cmap ops =
     let
         count =
             yh - yl
     in
     if count < 0 then
-        ops
+        ( ops, x )
+
+    else if ctx.low && (x < 0 || x >= 320 || yl < 0 || yh >= 200) then
+        ( ops, x )
 
     else
         let
@@ -1666,10 +1715,10 @@ drawColumn ctx x yl yh texturemid iscale source cmap ops =
                 Run (ctx.wy + yl) (columnRun source.mem source.offset cmap frac0 iscale count [])
         in
         if ctx.low then
-            Compose.push (ctx.wx + 2 * x) op (Compose.push (ctx.wx + 2 * x + 1) op ops)
+            ( Compose.push (at (2 * x) ctx.columnofs) op (Compose.push (at (2 * x + 1) ctx.columnofs) op ops), 2 * x )
 
         else
-            Compose.push (ctx.wx + x) op ops
+            ( Compose.push (ctx.wx + x) op ops, x )
 
 
 {-| The pixels `dc_colormap[dc_source[(frac>>FRACBITS)&127]]` for k = 0 to count, frac
@@ -1721,9 +1770,13 @@ type ColFunc
     | Shadow
 
 
+{-| What masked drawing changes: the writes, `fuzzpos`, and `dc_x` (see
+`drawColumnX`).
+-}
 type alias MaskedSt =
     { ops : Array (List Op)
     , fuzzpos : Int
+    , dcx : Int
     }
 
 
@@ -1733,7 +1786,11 @@ drawMaskedRun : Ctx -> ColFunc -> Int -> Int -> Int -> Int -> Int -> Source -> M
 drawMaskedRun ctx colfunc x yl yh texturemid iscale source ms =
     case colfunc of
         Base cmap ->
-            { ms | ops = drawColumn ctx x yl yh texturemid iscale source cmap ms.ops }
+            let
+                ( ops, dcx ) =
+                    drawColumnX ctx x yl yh texturemid iscale source cmap ms.ops
+            in
+            { ms | ops = ops, dcx = dcx }
 
         Translated cmap table ->
             let
@@ -1773,17 +1830,27 @@ drawMaskedRun ctx colfunc x yl yh texturemid iscale source ms =
                 ms
 
             else
-                { ops = Compose.push (ctx.wx + x) (Fuzz (ctx.wy + yl2) (ctx.wy + yh2) ms.fuzzpos) ms.ops
-                , fuzzpos = modBy 50 (ms.fuzzpos + count + 1)
+                { ms
+                    | ops = Compose.push (ctx.wx + x) (Fuzz (ctx.wy + yl2) (ctx.wy + yh2) ms.fuzzpos) ms.ops
+                    , fuzzpos = modBy 50 (ms.fuzzpos + count + 1)
                 }
 
 
 {-| R\_DrawMaskedColumn: the posts of a column (starting at `ofs` in `mem`), clipped
 to the column's floor and ceiling clips.
 -}
-drawMaskedColumn : Ctx -> ColFunc -> Int -> Mem -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> MaskedSt -> MaskedSt
-drawMaskedColumn ctx colfunc x mem ofs texturemid sprtopscreen spryscale iscale floorclip ceilingclip ms =
+drawMaskedColumn : Ctx -> ColFunc -> Mem -> Int -> Int -> Int -> Int -> Int -> (Int -> Int) -> (Int -> Int) -> MaskedSt -> MaskedSt
+drawMaskedColumn ctx colfunc mem ofs texturemid sprtopscreen spryscale iscale floorclipAt ceilingclipAt ms =
     let
+        x =
+            ms.dcx
+
+        floorclip =
+            floorclipAt x
+
+        ceilingclip =
+            ceilingclipAt x
+
         topdelta =
             Mem.byte ofs mem
     in
@@ -1828,7 +1895,7 @@ drawMaskedColumn ctx colfunc x mem ofs texturemid sprtopscreen spryscale iscale 
                 else
                     ms
         in
-        drawMaskedColumn ctx colfunc x mem (ofs + length + 4) texturemid sprtopscreen spryscale iscale floorclip ceilingclip ms2
+        drawMaskedColumn ctx colfunc mem (ofs + length + 4) texturemid sprtopscreen spryscale iscale floorclipAt ceilingclipAt ms2
 
 
 
@@ -2582,24 +2649,28 @@ renderMaskedSegRange ctx dsIndex x1 x2 phase =
                                         ms2 =
                                             drawMaskedColumn ctx
                                                 (Base cmap)
-                                                x
                                                 source.mem
                                                 (source.offset - 3)
                                                 texturemid
                                                 sprtopscreen
                                                 spryscale
                                                 (invScale spryscale)
-                                                (clipAt ctx ds.sprbottomclip ds.x1 x)
-                                                (clipAt ctx ds.sprtopclip ds.x1 x)
-                                                ms
+                                                (clipAt ctx ds.sprbottomclip ds.x1)
+                                                (clipAt ctx ds.sprtopclip ds.x1)
+                                                { ms | dcx = x }
+
+                                        -- dc_x, doubled by low detail's colfunc, also
+                                        -- picks the column marked drawn and the next one
+                                        done =
+                                            ms2.dcx
                                     in
-                                    go (x + 1) (Int32.add spryscale ds.scalestep) ( Array.set (x - ds.x1) 32767 colsAcc, ms2 )
+                                    go (done + 1) (Int32.add spryscale ds.scalestep) ( Array.set (done - ds.x1) 32767 colsAcc, ms2 )
 
                                 else
                                     go (x + 1) (Int32.add spryscale ds.scalestep) ( colsAcc, ms )
 
                         ( newCols, msDone ) =
-                            go x1 (Int32.add ds.scale1 (Int32.mul (x1 - ds.x1) ds.scalestep)) ( cols, { ops = phase.ops, fuzzpos = phase.fuzzpos } )
+                            go x1 (Int32.add ds.scale1 (Int32.mul (x1 - ds.x1) ds.scalestep)) ( cols, { ops = phase.ops, fuzzpos = phase.fuzzpos, dcx = x1 } )
                     in
                     { phase
                         | ops = msDone.ops
@@ -2791,13 +2862,15 @@ drawVisSprite ctx vis floorclip ceilingclip phase =
 
                     ofs =
                         Mem.u32 (8 + 4 * texturecolumn) mem
+
+                    ms2 =
+                        drawMaskedColumn ctx colfunc mem ofs vis.texturemid sprtopscreen vis.scale iscale floorclip ceilingclip { ms | dcx = x }
                 in
-                go (x + 1)
-                    (Int32.add frac vis.xiscale)
-                    (drawMaskedColumn ctx colfunc x mem ofs vis.texturemid sprtopscreen vis.scale iscale (floorclip x) (ceilingclip x) ms)
+                -- the loop counts with dc_x (see drawColumnX)
+                go (ms2.dcx + 1) (Int32.add frac vis.xiscale) ms2
 
         done =
-            go vis.x1 vis.startfrac { ops = phase.ops, fuzzpos = phase.fuzzpos }
+            go vis.x1 vis.startfrac { ops = phase.ops, fuzzpos = phase.fuzzpos, dcx = vis.x1 }
     in
     { phase | ops = done.ops, fuzzpos = done.fuzzpos, cache = cache1 }
 
@@ -2913,4 +2986,16 @@ drawPSprite ctx player spritelights psp phase =
                                 , mobjflags = 0
                                 }
                         in
-                        drawVisSprite ctx vis (\_ -> vs.viewheight) (\_ -> -1) phase
+                        -- mfloorclip = screenheightarray: viewheight across the view, zero past
+                        -- it (where low detail's dc_x can reach)
+                        drawVisSprite ctx
+                            vis
+                            (\x ->
+                                if x < vs.viewwidth then
+                                    vs.viewheight
+
+                                else
+                                    0
+                            )
+                            (\_ -> -1)
+                            phase

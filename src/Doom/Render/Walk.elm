@@ -1732,10 +1732,32 @@ columnRun mem ofs cmap frac0 step k acc =
 
     else
         let
+            -- Mem.byte and the colormap lookup, written out: this is the
+            -- innermost loop of every wall and sprite
+            i =
+                ofs + Bitwise.and 127 (Bitwise.shiftRightBy 16 (frac0 + k * step))
+
             b =
-                Mem.byte (ofs + Bitwise.and 127 (Bitwise.shiftRightBy 16 (frac0 + k * step))) mem
+                case Array.get (Bitwise.shiftRightBy 1 i) mem of
+                    Just w ->
+                        if Bitwise.and 1 i == 0 then
+                            Bitwise.and 255 w
+
+                        else
+                            Bitwise.shiftRightBy 8 w
+
+                    Nothing ->
+                        0
+
+            c =
+                case Array.get b cmap of
+                    Just v ->
+                        v
+
+                    Nothing ->
+                        0
         in
-        columnRun mem ofs cmap frac0 step (k - 1) ((Array.get b cmap |> Maybe.withDefault 0) :: acc)
+        columnRun mem ofs cmap frac0 step (k - 1) (c :: acc)
 
 
 {-| R\_DrawTranslatedColumn: `dc_colormap[dc_translation[dc_source[frac>>FRACBITS]]]`
@@ -2197,7 +2219,17 @@ spanPixel flat cmap xfrac yfrac =
         spot =
             Bitwise.and 4032 (Bitwise.shiftRightBy 10 yfrac) + Bitwise.and 63 (Bitwise.shiftRightBy 16 xfrac)
     in
-    Array.get (at spot flat) cmap |> Maybe.withDefault 0
+    case Array.get spot flat of
+        Just t ->
+            case Array.get t cmap of
+                Just c ->
+                    c
+
+                Nothing ->
+                    0
+
+        Nothing ->
+            0
 
 
 {-| A flat in low detail: R\_MakeSpans as the C source runs it, each span drawn by

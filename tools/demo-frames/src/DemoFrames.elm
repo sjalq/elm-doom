@@ -10,14 +10,17 @@ PNGs of the console player's view at the tics asked for.
 import Array exposing (Array)
 import Bytes exposing (Bytes)
 import Dict
-import Doom
 import Doom.Data as Data exposing (Data)
+import Doom.Data.Load as DataLoad
+import Doom.Demo as Demo
+import Doom.Game as Game exposing (Game)
 import Doom.Render.Build as Build
 import Doom.Render.Picture as Picture
 import Doom.Render.Png as Png
 import Doom.Render.Raster as Raster
 import Doom.Render.Scene as Scene
 import Doom.Render.SpriteFrames as SpriteFrames
+import Doom.Ticcmd as Ticcmd
 import Doom.Wad as Wad
 import FileSystem
 import Path
@@ -39,7 +42,7 @@ run env =
                 |> Task.mapError FileSystem.errorToString
                 |> Task.andThen
                     (\bytes ->
-                        case Doom.start (Doom.Demo demo) bytes of
+                        case startDemo demo bytes of
                             Ok model ->
                                 shots env
                                     out
@@ -58,13 +61,32 @@ run env =
             say env "usage: demo-frames WAD DEMO OUTDIR WIDTH HEIGHT TIC..."
 
 
+{-| The game playing a demo lump of the WAD (the game alone: no menus or wipes).
+-}
+startDemo : String -> Bytes -> Result String Game
+startDemo name bytes =
+    Wad.fromBytes bytes
+        |> Result.andThen
+            (\w ->
+                DataLoad.fromWad w
+                    |> Result.andThen
+                        (\data ->
+                            Wad.lump name w
+                                |> Result.fromMaybe ("no demo " ++ name)
+                                |> Result.andThen Demo.fromBytes
+                                |> Result.map (\demo -> Game.new w data (Game.playDemo demo))
+                        )
+            )
+
+
 say : System.Environment -> String -> Task x ()
 say env msg =
     Stream.logLine msg env.stdout
 
 
-{-| Run tics one at a time, shooting at each requested one. -}
-shots : System.Environment -> String -> Int -> Int -> List Int -> Int -> Doom.Model -> Task String ()
+{-| Run tics one at a time, shooting at each requested one.
+-}
+shots : System.Environment -> String -> Int -> Int -> List Int -> Int -> Game -> Task String ()
 shots env out w h wanted tic model =
     case wanted of
         [] ->
@@ -72,23 +94,23 @@ shots env out w h wanted tic model =
 
         next :: rest ->
             if tic < next then
-                shots env out w h wanted (tic + 1) (Tuple.first (Doom.update (Doom.Tick Doom.msPerTic) model))
+                shots env out w h wanted (tic + 1) (Tuple.first (Game.tick (Array.repeat 4 Ticcmd.empty) model))
 
             else
                 shoot env out w h tic model
                     |> Task.andThen (\_ -> shots env out w h rest tic model)
 
 
-shoot : System.Environment -> String -> Int -> Int -> Int -> Doom.Model -> Task String ()
+shoot : System.Environment -> String -> Int -> Int -> Int -> Game -> Task String ()
 shoot env out w h tic model =
-    case Doom.playing model of
+    case Game.playing model of
         Nothing ->
             say env ("tic " ++ String.fromInt tic ++ ": not in a level")
 
         Just ( gameEnv, world ) ->
             let
                 wad =
-                    Doom.wad model
+                    model.wad
 
                 lookup name =
                     Wad.lump name wad

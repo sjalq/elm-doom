@@ -1,6 +1,6 @@
 module Doom.Game exposing
     ( Game, GameState(..), GameAction(..), FinaleState, Tic
-    , new, newGame, playDemo, tick
+    , new, newGame, playDemo, initNew, tick
     , playing, consolePlayer, gametic, playerNames
     )
 
@@ -23,7 +23,7 @@ and the finale's text and cast (the finale counts its tics and, in Doom II, move
 when someone presses a button).
 
 @docs Game, GameState, GameAction, FinaleState, Tic
-@docs new, newGame, playDemo, tick
+@docs new, newGame, playDemo, initNew, tick
 @docs playing, consolePlayer, gametic, playerNames
 
 -}
@@ -65,6 +65,7 @@ type alias Game =
     , respawnparm : Bool
     , fastparm : Bool
     , demoplayback : Bool
+    , singledemo : Bool
     , netdemo : Bool
     , state : GameState
     , action : GameAction
@@ -116,6 +117,7 @@ order.
 -}
 type alias Tic =
     { ranLevel : Bool
+    , demoEnded : Bool
     , sounds : List Sound.Event
     }
 
@@ -141,6 +143,7 @@ new wad data action =
     , respawnparm = False
     , fastparm = False
     , demoplayback = False
+    , singledemo = True
     , netdemo = False
     , state = DemoScreen
     , action = action
@@ -234,24 +237,39 @@ tick netcmds game0 =
     in
     case readCmds netcmds game1 of
         Nothing ->
-            -- the demo is over: like -playdemo, stop here
-            let
-                ended =
-                    checkDemoStatus game1
-            in
-            ( ended, { ranLevel = False, sounds = List.reverse ended.world.sounds } )
+            if game1.singledemo then
+                -- the demo is over: like -playdemo, stop here
+                let
+                    ended =
+                        checkDemoStatus game1
+                in
+                ( ended, { ranLevel = False, demoEnded = True, sounds = List.reverse ended.world.sounds } )
+
+            else
+                -- in the demo loop, G_CheckDemoStatus asks for the next page and the tic
+                -- goes on with the console player's own command
+                let
+                    ended =
+                        endDemo game1
+                in
+                runTic True (readCmds netcmds ended |> Maybe.withDefault ended)
 
         Just game2 ->
-            let
-                ( game3, ranLevel ) =
-                    game2 |> specialButtons |> mainAction
+            runTic False game2
 
-                world =
-                    game3.world
-            in
-            ( { game3 | world = { world | gametic = world.gametic + 1, sounds = [] } }
-            , { ranLevel = ranLevel, sounds = List.reverse world.sounds }
-            )
+
+runTic : Bool -> Game -> ( Game, Tic )
+runTic demoEnded game2 =
+    let
+        ( game3, ranLevel ) =
+            game2 |> specialButtons |> mainAction
+
+        world =
+            game3.world
+    in
+    ( { game3 | world = { world | gametic = world.gametic + 1, sounds = [] } }
+    , { ranLevel = ranLevel, demoEnded = demoEnded, sounds = List.reverse world.sounds }
+    )
 
 
 clearSounds : World -> World
@@ -543,7 +561,8 @@ doPlayDemo demo game =
     { started | demoplayback = True, demo = Just demo }
 
 
-{-| G\_InitNew: clamp the episode and map to the game, reset the random numbers,
+{-| G\_InitNew (what -warp and -skill start with, keeping -fast, -respawn and
+-nomonsters, which G\_DoNewGame clears): clamp the episode and map to the game, reset the random numbers,
 settle respawning and fast monsters, make every player start afresh, and load the
 level.
 -}
@@ -708,14 +727,29 @@ tryOtherStarts env playernum i ( que, world ) =
                 tryOtherStarts env playernum (i + 1) state
 
 
-{-| G\_CheckDemoStatus when a demo ends: the game stops, and its settings go back to a
-single-player game's.
+{-| G\_CheckDemoStatus when a -playdemo demo ends: the game stops, and its settings go
+back to a single-player game's.
 -}
 checkDemoStatus : Game -> Game
 checkDemoStatus game =
     let
-        params =
+        ended =
+            endDemo game
+    in
+    { ended | state = DemoScreen, env = Nothing }
+
+
+{-| G\_CheckDemoStatus in the demo loop: the settings go back to a single-player
+game's; the level stays until D\_DoAdvanceDemo moves on.
+-}
+endDemo : Game -> Game
+endDemo game =
+    let
+        p =
             game.params
+
+        params =
+            { p | netgame = False, deathmatch = 0, nomonsters = False, consoleplayer = 0 }
 
         world =
             game.world
@@ -724,12 +758,11 @@ checkDemoStatus game =
         | demoplayback = False
         , netdemo = False
         , demo = Nothing
-        , params = { params | netgame = False, deathmatch = 0, nomonsters = False, consoleplayer = 0 }
+        , params = params
+        , env = Maybe.map (\env -> { env | params = params }) game.env
         , respawnparm = False
         , fastparm = False
         , world = { world | playeringame = Array.fromList [ firstInGame world, False, False, False ] }
-        , state = DemoScreen
-        , env = Nothing
     }
 
 

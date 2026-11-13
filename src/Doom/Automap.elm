@@ -1,8 +1,8 @@
-module Doom.Automap exposing (Model, init, active, start, stop, ticker, responder, drawer)
+module Doom.Automap exposing (Model, init, active, start, stop, deactivate, setSingleDemo, stopOnDeath, ticker, responder, drawer)
 
-{-| The automap (am\_map.c).
+{-| The automap (am\_map.c). Stub with doom-automap's announced API.
 
-@docs Model, init, active, start, stop, ticker, responder, drawer
+@docs Model, init, active, start, stop, deactivate, setSingleDemo, stopOnDeath, ticker, responder, drawer
 
 -}
 
@@ -13,7 +13,7 @@ import Doom.Wad exposing (Wad)
 import Doom.World exposing (World)
 
 
-{-| The automap's state: whether it's showing, where it looks, the zoom, marks.
+{-| The automap's state.
 -}
 type Model
     = Model
@@ -22,47 +22,68 @@ type Model
 {-| Load the mark number patches.
 -}
 init : Wad -> Model
-init a0 =
+init _ =
     Debug.todo "Doom.Automap.init"
 
 
 {-| automapactive.
 -}
 active : Model -> Bool
-active a0 =
+active _ =
     Debug.todo "Doom.Automap.active"
 
 
 {-| AM\_Start.
 -}
 start : Env -> World -> Int -> Model -> Model
-start a0 a1 a2 a3 =
+start _ _ _ _ =
     Debug.todo "Doom.Automap.start"
 
 
 {-| AM\_Stop.
 -}
 stop : Model -> Model
-stop a0 =
+stop _ =
     Debug.todo "Doom.Automap.stop"
+
+
+{-| automapactive = false.
+-}
+deactivate : Model -> Model
+deactivate _ =
+    Debug.todo "Doom.Automap.deactivate"
+
+
+{-| singledemo.
+-}
+setSingleDemo : Bool -> Model -> Model
+setSingleDemo _ _ =
+    Debug.todo "Doom.Automap.setSingleDemo"
 
 
 {-| AM\_Ticker.
 -}
 ticker : Env -> World -> Int -> Model -> Model
-ticker a0 a1 a2 a3 =
+ticker _ _ _ _ =
     Debug.todo "Doom.Automap.ticker"
 
 
-{-| AM\_Responder (the player's message may change, so the world comes back).
+{-| AM\_Responder: the model, the world, whether it ate the event.
 -}
-responder : Event -> Env -> World -> Int -> Model -> Maybe ( Model, World )
-responder a0 a1 a2 a3 a4 =
+responder : Event -> Env -> World -> Int -> Model -> ( Model, World, Bool )
+responder _ _ _ _ _ =
     Debug.todo "Doom.Automap.responder"
 
 
 {-| AM\_Drawer.
 -}
 drawer : Env -> World -> Int -> Model -> Framebuffer -> Framebuffer
-drawer a0 a1 a2 a3 a4 =
+drawer _ _ _ _ _ =
     Debug.todo "Doom.Automap.drawer"
+
+
+{-| AM\_Stop when the console player died during the tic.
+-}
+stopOnDeath : World -> World -> Int -> Model -> Model
+stopOnDeath _ _ _ _ =
+    Debug.todo "Doom.Automap.stopOnDeath"

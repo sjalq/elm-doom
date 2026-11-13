@@ -1,9 +1,8 @@
-module Doom.Hud.Messages exposing (Model, init, start, ticker, responder, drawer)
+module Doom.Hud.Messages exposing (Model, init, start, forceNextMessage, ticker, responder, erase, drawer)
 
-{-| The heads-up messages (hu\_stuff.c, hu\_lib.c): the player's message line at the
-top, and the level's name on the automap. Chat isn't translated.
+{-| The heads-up messages (hu\_stuff.c). Stub with doom-hud's announced API.
 
-@docs Model, init, start, ticker, responder, drawer
+@docs Model, init, start, forceNextMessage, ticker, responder, erase, drawer
 
 -}
 
@@ -20,36 +19,50 @@ type Model
     = Model
 
 
-{-| HU\_Init: load the font.
+{-| HU\_Init.
 -}
 init : Wad -> Model
-init a0 =
+init _ =
     Debug.todo "Doom.Hud.Messages.init"
 
 
 {-| HU\_Start.
 -}
 start : Env -> World -> Model -> Model
-start a0 a1 a2 =
+start _ _ _ =
     Debug.todo "Doom.Hud.Messages.start"
 
 
-{-| HU\_Ticker showMessages: picks up and clears the player's message.
+{-| message\_dontfuckwithme.
 -}
-ticker : Bool -> World -> Int -> Model -> ( Model, World )
-ticker a0 a1 a2 a3 =
+forceNextMessage : Model -> Model
+forceNextMessage _ =
+    Debug.todo "Doom.Hud.Messages.forceNextMessage"
+
+
+{-| HU\_Ticker.
+-}
+ticker : { showMessages : Bool } -> World -> Int -> Model -> ( Model, World )
+ticker _ _ _ _ =
     Debug.todo "Doom.Hud.Messages.ticker"
 
 
-{-| HU\_Responder: the message refresh key.
+{-| HU\_Responder.
 -}
 responder : Event -> Model -> Maybe Model
-responder a0 a1 =
+responder _ _ =
     Debug.todo "Doom.Hud.Messages.responder"
 
 
-{-| HU\_Drawer automapActive.
+{-| HU\_Erase: back screen, then screens[0].
+-}
+erase : { automap : Bool, viewwindowx : Int, viewwindowy : Int, viewwidth : Int, viewheight : Int } -> Framebuffer -> Model -> Framebuffer -> ( Model, Framebuffer )
+erase _ _ _ _ =
+    Debug.todo "Doom.Hud.Messages.erase"
+
+
+{-| HU\_Drawer.
 -}
 drawer : Env -> Bool -> Model -> Framebuffer -> Framebuffer
-drawer a0 a1 a2 a3 =
+drawer _ _ _ _ =
     Debug.todo "Doom.Hud.Messages.drawer"

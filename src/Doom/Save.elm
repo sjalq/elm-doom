@@ -1,33 +1,31 @@
 module Doom.Save exposing (save, description, load)
 
-{-| Saved games (p\_saveg.c, G\_DoSaveGame, G\_DoLoadGame).
+{-| Saved games (p\_saveg.c). Stub with doom-saves' announced API.
 
 @docs save, description, load
 
 -}
 
 import Bytes exposing (Bytes)
-import Doom.Data exposing (Data)
 import Doom.Game exposing (Game)
-import Doom.Wad exposing (Wad)
 
 
-{-| G\_DoSaveGame: the game (in a level) with its description.
+{-| G\_DoSaveGame.
 -}
 save : String -> Game -> Bytes
-save a0 a1 =
+save _ _ =
     Debug.todo "Doom.Save.save"
 
 
 {-| The description a save starts with.
 -}
 description : Bytes -> Maybe String
-description a0 =
+description _ =
     Debug.todo "Doom.Save.description"
 
 
-{-| G\_DoLoadGame.
+{-| G\_DoLoadGame onto the current game.
 -}
-load : Wad -> Data -> Bytes -> Result String Game
-load a0 a1 a2 =
+load : Bytes -> Game -> Result String Game
+load _ _ =
     Debug.todo "Doom.Save.load"

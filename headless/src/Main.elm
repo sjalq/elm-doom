@@ -1,10 +1,15 @@
 module Main exposing (main)
 
-{-| Play a demo without drawing anything, printing one `Doom.StateHash` line after
-every tic that ran the level, to compare with linuxdoom-1.10 tic by tic.
+{-| Run Doom without a screen, to compare it with linuxdoom-1.10 (the C oracle in
+doom/oracle).
 
+    doom-headless -full -iwad <wad> [-frames FILE] [-events FILE] [-iterations N] ...
     doom-headless <wad> <demo lump name or demo file> [maxtics]
     doom-headless --load-only <wad> [map]
+
+`-full` runs the whole program, title, menus, wipes and all, and writes every frame
+(see `Full`). The second form plays a demo without drawing anything, printing one
+`Doom.StateHash` line after every tic that ran the level, to compare tic by tic.
 
 Only the hash lines go to stdout; anything else goes to stderr. `maxtics` stops after
 that many game tics. `--load-only` loads a map (E1M1, or MAP01 for Doom II) and prints
@@ -24,6 +29,7 @@ import Doom.StateHash as StateHash
 import Doom.Ticcmd as Ticcmd
 import Doom.Wad as Wad exposing (Wad)
 import FileSystem
+import Full
 import Path
 import Stream
 import System
@@ -38,6 +44,17 @@ main =
 run : System.Environment -> Task Never ()
 run env =
     case List.drop 1 env.args of
+        args ->
+            if List.member "-full" args then
+                Full.run env args
+
+            else
+                legacy env args
+
+
+legacy : System.Environment -> List String -> Task Never ()
+legacy env args =
+    case args of
         [ "--load-only", wadPath ] ->
             withWad env wadPath (loadOnly env Nothing)
 

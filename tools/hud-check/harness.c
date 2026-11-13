@@ -14,6 +14,7 @@
 #include "hu_stuff.h"
 #include "g_game.h"
 #include "am_map.h"
+#include "sounds.h"
 
 extern boolean automapactive;
 extern int st_palette_harness (void);
@@ -39,9 +40,12 @@ static int Automap (int t) { return (t >= 1050 && t < 1150) || (t >= 2600 && t <
 
 static unsigned H (unsigned h, int v) { return h * 31u + (unsigned) v; }
 
+static int in_key = 0;
+
 static void Key (int c)
 {
     event_t ev;
+    in_key = 1;
     ev.type = ev_keydown;
     ev.data1 = c;
     if (!HU_Responder (&ev))
@@ -49,12 +53,19 @@ static void Key (int c)
     ev.type = ev_keyup;
     HU_Responder (&ev);
     ST_Responder (&ev);
+    in_key = 0;
 }
 
-void Harness_MusicName (const char* n)
+// S_ChangeMusic, called from a cheat (the level's own music isn't logged)
+void Harness_Music (int n)
 {
-    if (out)
-	fprintf (out, "music %s\n", n);
+    if (out && in_key)
+    {
+	if (n <= mus_None || n >= NUMMUSIC)
+	    fprintf (out, "music bad %d\n", n);
+	else
+	    fprintf (out, "music D_%s\n", S_music[n].name);
+    }
 }
 
 void Harness_BeforeTic (void)
@@ -110,7 +121,7 @@ void Harness_AfterTic (void)
     for (y = 0 ; y < 168 ; y++)
 	for (x = 0 ; x < 320 ; x++)
 	    hh = H (hh, screens[0][y * 320 + x]);
-    fprintf (out, "%d %d %u %u\n", gametic, st_palette_harness (), hs, hh);
+    { extern int rndindex; fprintf (out, "%d %d %u %u r%d\n", gametic, st_palette_harness (), hs, hh, rndindex); }
     if (M_CheckParm ("-dumpall") || (gametic % 500) == 0)
     {
 	FILE* f;

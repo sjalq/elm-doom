@@ -31,7 +31,7 @@ before a refresh in the game).
 import Array exposing (Array)
 import Bitwise
 import Doom.Angle as Angle
-import Doom.Defs as Defs exposing (Ammo(..), GameMode(..), Power(..), Skill, Weapon(..))
+import Doom.Defs as Defs exposing (Ammo(..), GameMode(..), Power(..), Skill(..), Weapon(..))
 import Doom.Event exposing (Event(..))
 import Doom.Geometry as Geometry
 import Doom.Int32 as Int32
@@ -1071,10 +1071,12 @@ type alias Responded =
 {-| ST\_Responder for the console player `n`: the cheats, typed as key presses. It never
 takes the event (C returns false), so the event goes on to the automap's responder.
 
-The cheats work at any skill (linuxdoom-1.10 has the nightmare check commented out);
-all but idclev are off in a netgame. As in C, a key that completes one cheat in the
-chain god, fa, kfa, mus, noclip isn't seen by the later ones, nor is a key that
-completes idbehold seen by idchoppers and idmypos.
+The cheats are DOS v1.9's (Ultimate Doom, as Chocolate Doom's st\_stuff.c has
+them): all but idclev are off in a netgame and on Nightmare, where their sequences
+aren't even fed the keys; idclev is off in a netgame only. Doom accepts only
+idspispopd for no clipping, Doom II only idclip. As in C, a key that completes one
+cheat in the chain god, fa, kfa, mus, noclip isn't seen by the later ones, nor is a
+key that completes idbehold seen by idchoppers and idmypos.
 
 -}
 responder : Event -> Env -> World -> Int -> Model -> Responded
@@ -1086,14 +1088,18 @@ responder event env world n (Model st) =
                     st.cheats
 
                 ( c1, world1, reqs1 ) =
-                    if env.params.netgame then
+                    if env.params.netgame || env.params.skill == Nightmare then
                         ( c0, world, [] )
 
                     else
                         singlePlayerCheats key env n c0 world
 
                 ( clevDone, clev ) =
-                    checkCheat key c1.clev
+                    if env.params.netgame then
+                        ( False, c1.clev )
+
+                    else
+                        checkCheat key c1.clev
 
                 ( c2, world2, reqs2 ) =
                     if clevDone then
@@ -1108,24 +1114,13 @@ responder event env world n (Model st) =
                                 else
                                     ( b0 - 48, b1 - 48 )
 
+                            -- the Ultimate Doom executable's checks
                             valid =
-                                epsd
-                                    >= 1
-                                    && map
-                                    >= 1
-                                    && (case env.params.gameMode of
-                                            Retail ->
-                                                epsd <= 4 && map <= 9
+                                if env.params.gameMode == Commercial then
+                                    map >= 1 && map <= 40
 
-                                            Registered ->
-                                                epsd <= 3 && map <= 9
-
-                                            Shareware ->
-                                                epsd <= 1 && map <= 9
-
-                                            Commercial ->
-                                                epsd <= 1 && map <= 34
-                                       )
+                                else
+                                    epsd >= 1 && epsd <= 4 && map >= 1 && map <= 9
 
                             c =
                                 { c1 | clev = clev1 }
@@ -1305,15 +1300,20 @@ firstCheat key env n c0 world =
 
                 else
                     let
+                        -- Doom: idspispopd only; Doom II: idclip only
                         ( noclipDone, noclip ) =
-                            checkCheat key c4.noclip
-
-                        ( commercialDone, commercialNoclip ) =
-                            if noclipDone then
-                                ( False, c4.commercialNoclip )
+                            if env.params.gameMode /= Commercial then
+                                checkCheat key c4.noclip
 
                             else
+                                ( False, c4.noclip )
+
+                        ( commercialDone, commercialNoclip ) =
+                            if env.params.gameMode == Commercial then
                                 checkCheat key c4.commercialNoclip
+
+                            else
+                                ( False, c4.commercialNoclip )
 
                         c5 =
                             { c4 | noclip = noclip, commercialNoclip = commercialNoclip }

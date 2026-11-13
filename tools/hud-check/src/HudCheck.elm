@@ -16,6 +16,8 @@ frame with --dump-all) is written as 64000 raw bytes to OUTDIR/eNNNNN.raw.
 -}
 
 import Array exposing (Array)
+import Bytes exposing (Bytes)
+import Doom.Audio.Sound as Sound
 import Doom.Data.Load as DataLoad
 import Doom.Demo as Demo
 import Doom.Event as Event
@@ -23,6 +25,7 @@ import Doom.Game as Game exposing (Game)
 import Doom.Hud.Messages as Messages
 import Doom.Hud.StatusBar as StatusBar
 import Doom.Int32 as Int32
+import Doom.Sound
 import Doom.Ticcmd as Ticcmd
 import Doom.Video as Video exposing (Framebuffer)
 import Doom.Wad as Wad exposing (Wad)
@@ -49,15 +52,19 @@ run env =
                     (\bytes ->
                         case Wad.fromBytes bytes of
                             Ok wad ->
-                                case ( DataLoad.fromWad wad, Wad.lump demo wad |> Result.fromMaybe "no such demo" |> Result.andThen Demo.fromBytes ) of
-                                    ( Ok data, Ok d ) ->
-                                        loop env out (List.member "--dump-all" rest) (initial (List.member "--clev" rest) wad (Game.new wad data (Game.playDemo d)))
+                                demoBytes wad demo
+                                    |> Task.andThen
+                                        (\demoData ->
+                                            case ( DataLoad.fromWad wad, Demo.fromBytes demoData ) of
+                                                ( Ok data, Ok d ) ->
+                                                    loop env out (List.member "--dump-all" rest) (initial (List.member "--clev" rest) wad (Game.new wad data (Game.playDemo d)))
 
-                                    ( Err e, _ ) ->
-                                        Task.fail e
+                                                ( Err e, _ ) ->
+                                                    Task.fail e
 
-                                    ( _, Err e ) ->
-                                        Task.fail e
+                                                ( _, Err e ) ->
+                                                    Task.fail e
+                                        )
 
                             Err e ->
                                 Task.fail e
@@ -68,6 +75,19 @@ run env =
             Stream.logLine "usage: hud-check WAD DEMO OUTDIR [--dump-all]" env.stderr
 
 
+{-| A demo lump of the WAD, or else a demo file.
+-}
+demoBytes : Wad -> String -> Task String Bytes
+demoBytes wad name =
+    case Wad.lump name wad of
+        Just bytes ->
+            Task.succeed bytes
+
+        Nothing ->
+            FileSystem.readFile (Path.fromPosixString name)
+                |> Task.mapError FileSystem.errorToString
+
+
 type alias Run =
     { game : Game
     , st : StatusBar.Model
@@ -76,7 +96,18 @@ type alias Run =
     , wasLevel : Bool
     , lastAutomap : Bool
     , clev : Bool
+    , sound : Sound.Model
     }
+
+
+{-| The sound settings that make `Doom.Audio.Sound` hear what the oracle's s\_sound.c
+hears: the oracle runs linuxdoom's S\_Init with snd\_SfxVolume 8 unscaled, where
+`Sound` scales the menu's volume by 8 as DOS does, so menu volume 1 here. Which
+sounds are audible decides which draw a pitch from M\_Random, and so the face.
+-}
+oracleSound : Sound.Settings
+oracleSound =
+    { channels = 3, sfxVolume = 1, musicVolume = 8 }
 
 
 initial : Bool -> Wad -> Game -> Run
@@ -88,6 +119,7 @@ initial clev wad game =
     , wasLevel = False
     , lastAutomap = False
     , clev = clev
+    , sound = Tuple.first (Sound.init wad oracleSound)
     }
 
 
@@ -214,8 +246,12 @@ step dumpAll r0 =
             else
                 ( r0, [] )
 
-        ( game1, _ ) =
+        ( ticked, tic ) =
             Game.tick (Array.repeat 4 Ticcmd.empty) r1.game
+
+        -- the tic's sounds draw their pitch from M_Random before ST_Ticker does
+        ( sound, game1 ) =
+            ticSounds pre tic.sounds r1.sound ticked
 
         body g =
             World.player (Game.consolePlayer g) g.world |> Maybe.andThen .mo
@@ -232,12 +268,13 @@ step dumpAll r0 =
                 ( True, Just ( env, world ) ) ->
                     { r1
                         | game = game1
+                        , sound = sound
                         , st = StatusBar.start env world (Game.consolePlayer game1) r1.st
                         , hu = Messages.start env world r1.hu
                     }
 
                 _ ->
-                    { r1 | game = game1 }
+                    { r1 | game = game1, sound = sound }
 
         r3 =
             case Game.playing r2.game of
@@ -258,6 +295,40 @@ step dumpAll r0 =
                     r2
     in
     frame dumpAll keyLines r3
+
+
+{-| S\_StartSound for the tic's sounds (in a level from where they are, otherwise from
+nowhere), for the M\_Random draws they make.
+-}
+ticSounds : Int -> List Doom.Sound.Event -> Sound.Model -> Game -> ( Sound.Model, Game )
+ticSounds gametic sounds sound game =
+    let
+        world =
+            game.world
+
+        ( sound1, rng ) =
+            case Game.playing game of
+                Just ( env, _ ) ->
+                    Sound.play gametic env world sounds world.rng sound
+                        |> (\( s, r, _ ) -> ( s, r ))
+
+                Nothing ->
+                    List.foldl
+                        (\ev ( s, r ) ->
+                            case ev of
+                                Doom.Sound.Start _ sfx ->
+                                    Sound.startSound gametic sfx r s |> (\( s2, r2, _ ) -> ( s2, r2 ))
+
+                                Doom.Sound.StartAt _ sfx _ ->
+                                    Sound.startSound gametic sfx r s |> (\( s2, r2, _ ) -> ( s2, r2 ))
+
+                                _ ->
+                                    ( s, r )
+                        )
+                        ( sound, world.rng )
+                        sounds
+    in
+    ( sound1, { game | world = { world | rng = rng } } )
 
 
 key : Int -> ( Run, List String ) -> ( Run, List String )
@@ -341,6 +412,7 @@ frame dumpAll keyLines r =
                         , String.fromInt (StatusBar.palette world (Game.consolePlayer r.game))
                         , String.fromInt hs
                         , String.fromInt hh
+                        , "r" ++ String.fromInt world.rng.rndindex
                         ]
 
                 dumps =

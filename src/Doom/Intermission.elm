@@ -252,8 +252,8 @@ animDefs mode epsd =
 {-| WI\_initAnimatedBack: no frame showing, and the first change soon (after a random
 part of the period for those that always run).
 -}
-initAnimatedBack : Intermission -> World -> ( Intermission, World )
-initAnimatedBack wi world =
+initAnimatedBack : Intermission -> Rng -> ( Intermission, Rng )
+initAnimatedBack wi rng0 =
     let
         ( states, rng ) =
             Array.foldl
@@ -272,10 +272,10 @@ initAnimatedBack wi world =
                     in
                     ( Array.push { ctr = -1, nexttic = nexttic } acc, r2 )
                 )
-                ( Array.empty, world.rng )
+                ( Array.empty, rng0 )
                 (animDefs wi.ctx.gameMode wi.wbs.epsd)
     in
-    ( { wi | anims = states }, { world | rng = rng } )
+    ( { wi | anims = states }, rng )
 
 
 {-| WI\_updateAnimatedBack: the animations whose time has come move on a frame.
@@ -349,11 +349,11 @@ updateAnimatedBack wi rng0 =
 -- STARTING
 
 
-{-| WI\_Start, given what the last intermission left in wi\_stuff.c's statics. It
-draws from M\_Random (in `World.rng`) for the background animations.
+{-| WI\_Start, given what the last intermission left in wi\_stuff.c's statics and
+the M\_Random state (`rndindex`), which it draws from for the background animations.
 -}
-start : Context -> Statics -> WbStart -> World -> ( Intermission, World )
-start ctx carried wbs0 world =
+start : Context -> Statics -> WbStart -> Rng -> ( Intermission, Rng )
+start ctx carried wbs0 rng =
     let
         wbs =
             { wbs0
@@ -420,7 +420,7 @@ start ctx carried wbs0 world =
                     , cntPar = -1
                 }
     in
-    initAnimatedBack initialised world
+    initAnimatedBack initialised rng
 
 
 atLeastOne : Int -> Int
@@ -512,10 +512,10 @@ ticker ctx world0 wi0 =
             if next.stage == ShowNextLoc then
                 -- WI_initShowNextLoc restarts the animations
                 let
-                    ( shown, w ) =
-                        initAnimatedBack next played
+                    ( shown, r ) =
+                        initAnimatedBack next played.rng
                 in
-                ( shown, w, Continue )
+                ( shown, { played | rng = r }, Continue )
 
             else
                 ( next, played, Continue )

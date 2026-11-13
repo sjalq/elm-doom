@@ -76,7 +76,9 @@
         "Doom.Intermission.Draw",
         "Doom.Finale",
         "Doom.Save",
-        "Doom.Audio.Sound"
+        "Doom.Audio.Sound",
+        "Doom.Audio.Mus",
+        "Doom.Audio.Midi"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {

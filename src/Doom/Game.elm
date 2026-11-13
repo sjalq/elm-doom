@@ -926,11 +926,11 @@ doCompleted game0 =
                 }
         in
         let
-            ( wi, started ) =
-                Intermission.start (intermissionContext game) game.wiStatics wminfo world
+            ( wi, rng ) =
+                Intermission.start (intermissionContext game) game.wiStatics wminfo world.rng
         in
         { game
-            | world = started
+            | world = { world | rng = rng }
             , wminfo = wminfo
             , state = Intermission wi
         }

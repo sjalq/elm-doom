@@ -278,8 +278,14 @@ simulate wad o scenario =
                 ctx =
                     { gameMode = mode, deathmatch = o.dm, netgame = o.net, playeringame = playeringame }
 
-                ( wi0, world0 ) =
-                    Intermission.start ctx Intermission.initialStatics wbs (Setup.newWorld playeringame)
+                newWorld =
+                    Setup.newWorld playeringame
+
+                ( wi0, rng0 ) =
+                    Intermission.start ctx Intermission.initialStatics wbs newWorld.rng
+
+                world0 =
+                    { newWorld | rng = rng0 }
 
                 loop tic wi world fb log =
                     if tic >= o.tics then

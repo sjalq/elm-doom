@@ -35,7 +35,8 @@ type alias Framebuffer =
 
 
 {-| A decoded patch (patch\_t): its header and, for each column, its posts (a run of
-pixels starting `top` rows down).
+pixels starting `top` rows down, kept as an array so a post goes onto the screen as
+one piece).
 -}
 type Patch
     = Patch
@@ -49,7 +50,7 @@ type Patch
 
 type alias Post =
     { top : Int
-    , pixels : List Int
+    , pixels : Array Int
     }
 
 
@@ -145,7 +146,7 @@ posts =
                             D.unsignedInt8
                                 |> D.andThen
                                     (\len ->
-                                        D.map3 (\_ px _ -> D.Loop ({ top = top, pixels = px } :: acc))
+                                        D.map3 (\_ px _ -> D.Loop ({ top = top, pixels = Array.fromList px } :: acc))
                                             D.unsignedInt8
                                             (list len D.unsignedInt8)
                                             D.unsignedInt8
@@ -186,14 +187,14 @@ patchSize (Patch p) =
 -}
 drawPatch : Int -> Int -> Patch -> Framebuffer -> Framebuffer
 drawPatch x y p fb =
-    drawPatchWith False x y identity p fb
+    drawPatchWith False x y Nothing p fb
 
 
 {-| V\_DrawPatchFlipped: mirrored left to right.
 -}
 drawPatchFlipped : Int -> Int -> Patch -> Framebuffer -> Framebuffer
 drawPatchFlipped x y p fb =
-    drawPatchWith True x y identity p fb
+    drawPatchWith True x y Nothing p fb
 
 
 {-| V\_DrawPatch with every pixel's index mapped through `translate` (a colour
@@ -201,10 +202,10 @@ translation or colormap).
 -}
 drawPatchTranslated : Int -> Int -> (Int -> Int) -> Patch -> Framebuffer -> Framebuffer
 drawPatchTranslated x y translate p fb =
-    drawPatchWith False x y translate p fb
+    drawPatchWith False x y (Just translate) p fb
 
 
-drawPatchWith : Bool -> Int -> Int -> (Int -> Int) -> Patch -> Framebuffer -> Framebuffer
+drawPatchWith : Bool -> Int -> Int -> Maybe (Int -> Int) -> Patch -> Framebuffer -> Framebuffer
 drawPatchWith flipped x0 y0 translate (Patch p) (Internal.Framebuffer cols) =
     let
         left =
@@ -213,49 +214,82 @@ drawPatchWith flipped x0 y0 translate (Patch p) (Internal.Framebuffer cols) =
         top =
             y0 - p.topoffset
 
+        drawPost post screenCol =
+            case translate of
+                Nothing ->
+                    setSpan (top + post.top) post.pixels screenCol
+
+                Just f ->
+                    setSpan (top + post.top) (Array.map f post.pixels) screenCol
+
         drawColumn col acc =
-            let
-                sx =
-                    left + col
-
-                source =
-                    if flipped then
-                        p.width - 1 - col
-
-                    else
-                        col
-            in
-            if sx < 0 || sx >= width then
+            if col >= p.width then
                 acc
 
             else
-                case ( Array.get source p.columns, Array.get sx acc ) of
-                    ( Just colPosts, Just screenCol ) ->
-                        Array.set sx (List.foldl drawPost screenCol colPosts) acc
+                let
+                    sx =
+                        left + col
 
-                    _ ->
-                        acc
+                    source =
+                        if flipped then
+                            p.width - 1 - col
 
-        drawPost post screenCol =
-            setRun (top + post.top) (List.map translate post.pixels) screenCol
+                        else
+                            col
+                in
+                if sx < 0 || sx >= width then
+                    drawColumn (col + 1) acc
+
+                else
+                    case ( Array.get source p.columns, Array.get sx acc ) of
+                        ( Just colPosts, Just screenCol ) ->
+                            drawColumn (col + 1) (Array.set sx (List.foldl drawPost screenCol colPosts) acc)
+
+                        _ ->
+                            drawColumn (col + 1) acc
     in
-    Internal.Framebuffer (List.foldl drawColumn cols (List.range 0 (p.width - 1)))
+    Internal.Framebuffer (drawColumn 0 cols)
 
 
-{-| Set the pixels of a column from row `y` down, skipping rows off the screen.
+{-| Put `run` into a column from row `y` down, leaving out the rows off the screen.
+Short runs are set pixel by pixel; longer ones are spliced in, the column cut around
+them.
 -}
-setRun : Int -> List Int -> Array Int -> Array Int
-setRun y pixels col =
-    case pixels of
-        [] ->
-            col
+setSpan : Int -> Array Int -> Array Int -> Array Int
+setSpan y run col =
+    let
+        top =
+            max 0 y
 
-        c :: rest ->
-            if y < 0 || y >= height then
-                setRun (y + 1) rest col
+        bottom =
+            min height (y + Array.length run)
+    in
+    if bottom <= top then
+        col
 
-            else
-                setRun (y + 1) rest (Array.set y c col)
+    else if bottom - top <= shortRun then
+        setEach top bottom (top - y) run col
+
+    else
+        Internal.splice top bottom (Array.slice (top - y) (bottom - y) run) col
+
+
+{-| How long a run is set pixel by pixel (each `Array.set` copies a 32-element node,
+a splice the whole column).
+-}
+shortRun : Int
+shortRun =
+    6
+
+
+setEach : Int -> Int -> Int -> Array Int -> Array Int -> Array Int
+setEach y bottom from run col =
+    if y >= bottom then
+        col
+
+    else
+        setEach (y + 1) bottom (from + 1) run (Array.set y (Array.get from run |> Maybe.withDefault 0) col)
 
 
 {-| tileFlat x y w h flat: the 64 × 64 flat (4096 bytes) tiled over the rectangle,
@@ -268,18 +302,28 @@ tileFlat x y w h flat fb =
             let
                 tex =
                     Array.fromList texels
+
+                top =
+                    max 0 y
+
+                bottom =
+                    min height (y + h)
             in
-            mapColumns x
-                w
-                (\sx col ->
-                    List.foldl
-                        (\sy c ->
-                            Array.set sy (Array.get (modBy 64 sy * 64 + modBy 64 sx) tex |> Maybe.withDefault 0) c
-                        )
-                        col
-                        (List.range (max 0 y) (min height (y + h) - 1))
-                )
+            if bottom <= top then
                 fb
+
+            else
+                mapColumns x
+                    w
+                    (\sx col ->
+                        Internal.splice top
+                            bottom
+                            (Array.initialize (bottom - top)
+                                (\i -> Array.get (modBy 64 (top + i) * 64 + modBy 64 sx) tex |> Maybe.withDefault 0)
+                            )
+                            col
+                    )
+                    fb
 
         Nothing ->
             fb
@@ -290,52 +334,95 @@ tileFlat x y w h flat fb =
 fill : Int -> Int -> Int -> Int -> Int -> Framebuffer -> Framebuffer
 fill x y w h color fb =
     let
+        top =
+            max 0 y
+
+        bottom =
+            min height (y + h)
+
         rows =
-            List.range (max 0 y) (min height (y + h) - 1)
+            Array.repeat (bottom - top) color
     in
-    mapColumns x w (\_ col -> List.foldl (\sy c -> Array.set sy color c) col rows) fb
+    if bottom <= top then
+        fb
+
+    else
+        mapColumns x w (\_ col -> Internal.splice top bottom rows col) fb
 
 
 {-| Change the columns x to x + w - 1 that are on the screen.
 -}
 mapColumns : Int -> Int -> (Int -> Array Int -> Array Int) -> Framebuffer -> Framebuffer
 mapColumns x w f (Internal.Framebuffer cols) =
-    Internal.Framebuffer
-        (List.foldl
-            (\sx acc ->
-                case Array.get sx acc of
-                    Just col ->
-                        Array.set sx (f sx col) acc
+    let
+        from =
+            max 0 x
 
-                    Nothing ->
-                        acc
+        to =
+            min width (x + w) - 1
+    in
+    if from == 0 && to == width - 1 then
+        Internal.Framebuffer (Array.indexedMap f cols)
+
+    else
+        Internal.Framebuffer
+            (List.foldl
+                (\sx acc ->
+                    case Array.get sx acc of
+                        Just col ->
+                            Array.set sx (f sx col) acc
+
+                        Nothing ->
+                            acc
+                )
+                cols
+                (List.range from to)
             )
-            cols
-            (List.range (max 0 x) (min width (x + w) - 1))
-        )
 
 
 {-| Set pixels (x, y, color), in order, skipping those off the screen.
 -}
 plot : List ( Int, Int, Int ) -> Framebuffer -> Framebuffer
 plot points (Internal.Framebuffer cols) =
-    Internal.Framebuffer
-        (List.foldl
-            (\( x, y, c ) acc ->
-                if x < 0 || x >= width || y < 0 || y >= height then
-                    acc
+    let
+        onScreen =
+            List.filter (\( x, y, _ ) -> x >= 0 && x < width && y >= 0 && y < height) points
 
-                else
+        -- the points column by column, each column's in their original order (the
+        -- sort is stable), so a later point still covers an earlier one
+        byColumn =
+            List.sortBy (\( x, _, _ ) -> x) onScreen
+
+        setColumn x col pts =
+            case pts of
+                ( px, y, c ) :: rest ->
+                    if px == x then
+                        setColumn x (Array.set y c col) rest
+
+                    else
+                        ( col, pts )
+
+                [] ->
+                    ( col, [] )
+
+        go pts acc =
+            case pts of
+                ( x, _, _ ) :: _ ->
                     case Array.get x acc of
                         Just col ->
-                            Array.set x (Array.set y c col) acc
+                            let
+                                ( newCol, rest ) =
+                                    setColumn x col pts
+                            in
+                            go rest (Array.set x newCol acc)
 
                         Nothing ->
                             acc
-            )
-            cols
-            points
-        )
+
+                [] ->
+                    acc
+    in
+    Internal.Framebuffer (go byColumn cols)
 
 
 {-| V\_CopyRect srcx srcy w h src destx desty dest.
@@ -343,15 +430,44 @@ plot points (Internal.Framebuffer cols) =
 copyRect : Int -> Int -> Int -> Int -> Framebuffer -> Int -> Int -> Framebuffer -> Framebuffer
 copyRect sx sy w h src dx dy dest =
     let
-        points =
-            List.range 0 (h - 1)
-                |> List.concatMap
-                    (\row ->
-                        List.range 0 (w - 1)
-                            |> List.map (\col -> ( dx + col, dy + row, pixel (sx + col) (sy + row) src ))
-                    )
+        top =
+            max 0 dy
+
+        bottom =
+            min height (dy + h)
     in
-    plot points dest
+    if w <= 0 || h <= 0 || bottom <= top then
+        dest
+
+    else if sx >= 0 && sy >= 0 && sx + w <= width && sy + h <= height then
+        let
+            (Internal.Framebuffer srcCols) =
+                src
+        in
+        mapColumns dx
+            w
+            (\x col ->
+                case Array.get (sx + x - dx) srcCols of
+                    Just srcCol ->
+                        Internal.splice top bottom (Array.slice (sy + top - dy) (sy + bottom - dy) srcCol) col
+
+                    Nothing ->
+                        col
+            )
+            dest
+
+    else
+        -- part of the source is off the screen (it reads as 0)
+        let
+            points =
+                List.range 0 (h - 1)
+                    |> List.concatMap
+                        (\row ->
+                            List.range 0 (w - 1)
+                                |> List.map (\col -> ( dx + col, dy + row, pixel (sx + col) (sy + row) src ))
+                        )
+        in
+        plot points dest
 
 
 {-| The index at (x, y), 0 off the screen.

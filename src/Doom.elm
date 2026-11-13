@@ -1,7 +1,7 @@
 module Doom exposing
     ( Model, init, Options, defaultOptions, start
     , Msg(..), update, msPerTic, maxCatchUp
-    , view, settings, savedGames, saveCount, finished
+    , view, frames, settings, savedGames, saveCount, finished
     , game, wad, playing, state, error
     )
 
@@ -36,7 +36,8 @@ gives back and play the sounds it asks for.
 The game loop runs at 35 passes a second, whatever the frame rate: `Tick` adds up
 the time that has passed and runs a pass of the original's D\_DoomLoop for every
 1/35 of a second (at most `maxCatchUp` at once: after a long pause the game doesn't
-race ahead). Each pass shows one frame. While the screen melts from one game state
+race ahead; and the time a pass that starts a melt takes, loading a level, isn't
+made up for). Each pass shows one frame. While the screen melts from one game state
 to the next, each 1/35 of a second shows the melt's next frame instead (the original
 spends its D\_Display wipe loop's frames the same way), and events wait for the
 next pass. The same events at the same passes give the same frames.
@@ -57,7 +58,7 @@ False makes it end the game (`finished`) as I\_Quit does.
 
 # Showing it
 
-@docs view, settings, savedGames, saveCount, finished
+@docs view, frames, settings, savedGames, saveCount, finished
 
 
 # Reading the game
@@ -80,14 +81,18 @@ import Doom.Wad as Wad exposing (Wad)
 import Doom.World exposing (World)
 
 
-{-| The running program, the events waiting for the next pass, and the time that
-hasn't made a whole tic yet.
+{-| The running program, the events waiting for the next pass, the time that
+hasn't made a whole tic yet, how many frames have been shown, and whether the last
+pass started a melt (`meltStarted`: the time until the next `Tick` was spent
+drawing the new screen, which the melt's clock doesn't count).
 -}
 type Model
     = Model
         { shell : Shell
         , events : List Event
         , pendingMs : Float
+        , frames : Int
+        , meltStarted : Bool
         }
 
 
@@ -130,7 +135,7 @@ start options bytes =
                                 ( shell, out ) =
                                     Shell.init options w data
                             in
-                            ( Model { shell = shell, events = [], pendingMs = 0 }, out.audio )
+                            ( Model { shell = shell, events = [], pendingMs = 0, frames = 0, meltStarted = False }, out.audio )
                         )
             )
 
@@ -171,8 +176,15 @@ update msg (Model m) =
     case msg of
         Tick ms ->
             let
+                -- the melt's first step comes a tic after it started, however
+                -- long the pass that started it took (D_Display starts the wipe's
+                -- clock once the new screen is drawn, after a level has loaded)
                 pending =
-                    m.pendingMs + max 0 ms
+                    if m.meltStarted then
+                        msPerTic
+
+                    else
+                        m.pendingMs + max 0 ms
 
                 due =
                     floor (pending / msPerTic)
@@ -184,7 +196,7 @@ update msg (Model m) =
                     else
                         pending - toFloat due * msPerTic
             in
-            step (min maxCatchUp due) ( Model { m | pendingMs = left }, [] )
+            step (min maxCatchUp due) ( Model { m | pendingMs = left, meltStarted = False }, [] )
 
         Event ev ->
             ( Model { m | events = m.events ++ [ ev ] }, [] )
@@ -203,14 +215,22 @@ step n ( Model m, audio ) =
             ( shell, out ) =
                 Shell.wipeStep m.shell
         in
-        step (n - 1) ( Model { m | shell = shell }, audio ++ out.audio )
+        step (n - 1) ( Model { m | shell = shell, frames = m.frames + List.length out.frames }, audio ++ out.audio )
 
     else
         let
             ( shell, out ) =
                 Shell.iteration m.events m.shell
+
+            next =
+                { m | shell = shell, events = [], frames = m.frames + List.length out.frames }
         in
-        step (n - 1) ( Model { m | shell = shell, events = [] }, audio ++ out.audio )
+        if Shell.wiping shell then
+            -- a melt started: its steps wait for the next Tick
+            ( Model { next | meltStarted = True, pendingMs = 0 }, audio ++ out.audio )
+
+        else
+            step (n - 1) ( Model next, audio ++ out.audio )
 
 
 {-| The screen to show now.
@@ -218,6 +238,14 @@ step n ( Model m, audio ) =
 view : Model -> Screen
 view (Model m) =
     Shell.screen m.shell
+
+
+{-| How many frames the program has shown so far (a pass of the loop or a step of
+the melt each shows one): a host only has to draw `view` again when it changes.
+-}
+frames : Model -> Int
+frames (Model m) =
+    m.frames
 
 
 {-| The settings (screen size, volumes, mouse sensitivity...) as the menu left them.

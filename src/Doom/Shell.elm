@@ -189,6 +189,7 @@ type alias Model =
     , oldgamestate : Maybe Gs
     , wipegamestate : Maybe Gs
     , borderdrawcount : Int
+    , backScreen : Maybe ( Int, Maybe Framebuffer )
 
     -- the screen
     , screen : Framebuffer
@@ -197,6 +198,10 @@ type alias Model =
     , stStopped : Bool
     , melt : Maybe Melt
     , finished : Bool
+
+    -- what the level's frames will read, read ahead during the melt
+    , precache : List RenderData.Precache
+    , precacheBudget : Int
     }
 
 
@@ -241,7 +246,9 @@ init options wad data =
             { wad = wad
             , data = data
             , gfx = Gfx.load wad
-            , renderData = Nothing
+            , -- R_Init's tables and the view size's, made now rather than when the
+              -- first level loads (a frame that has enough to do)
+              renderData = Just (RenderData.load wad data |> RenderData.prepareView settings.screenblocks settings.detailLevel)
             , game = startGame
             , menu = Menu.init mode settings
             , sound = sound
@@ -276,12 +283,15 @@ init options wad data =
             , oldgamestate = Nothing
             , wipegamestate = Just GsDemoScreen
             , borderdrawcount = 0
+            , backScreen = Nothing
             , screen = Video.blank 0
             , palette = 0
             , stPalette = 0
             , stStopped = True
             , melt = Nothing
             , finished = False
+            , precache = []
+            , precacheBudget = 0
             }
 
         autostart =
@@ -474,8 +484,15 @@ iteration events (Shell m0) =
 
                 ( m6, frame ) =
                     display m5
+
+                m7 =
+                    if m6.melt == Nothing then
+                        precacheStep m6
+
+                    else
+                        m6
             in
-            ( Shell m6, { frames = [ frame ], audio = List.reverse acc5.audio, saved = List.reverse acc5.saved } )
+            ( Shell m7, { frames = [ frame ], audio = List.reverse acc5.audio, saved = List.reverse acc5.saved } )
 
 
 {-| The next frame of the melt.
@@ -491,7 +508,7 @@ wipeStep (Shell m) =
                 ( m2, frame ) =
                     meltStep 1 melt m
             in
-            ( Shell m2, { frames = [ frame ], audio = [], saved = [] } )
+            ( Shell (precacheStep m2), { frames = [ frame ], audio = [], saved = [] } )
 
 
 meltStep : Int -> Melt -> Model -> ( Model, Screen )
@@ -1429,13 +1446,26 @@ display m0 =
         console =
             g.params.consoleplayer
 
-        backScreen rd =
-            View.drawBorder rd m.viewBlocks (Video.blank 0)
+        -- R_FillBackScreen's screens[1] (it only changes with the view size)
+        back =
+            case ( m.backScreen, m.renderData ) of
+                ( Just ( blocks, cached ), _ ) ->
+                    if blocks == m.viewBlocks then
+                        cached
+
+                    else
+                        Maybe.andThen (\rd -> View.backScreen rd m.viewBlocks) m.renderData
+
+                ( Nothing, Just rd ) ->
+                    View.backScreen rd m.viewBlocks
+
+                ( Nothing, Nothing ) ->
+                    Nothing
 
         -- HU_Erase
         ( messages1, screen1 ) =
             case ( gs, m.renderData ) of
-                ( GsLevel, Just rd ) ->
+                ( GsLevel, Just _ ) ->
                     if gametic /= 0 then
                         Messages.erase automapActive
                             { x = win.x
@@ -1443,7 +1473,7 @@ display m0 =
                             , width = win.width // (2 ^ m.viewDetail)
                             , height = win.height
                             }
-                            (backScreen rd)
+                            (Maybe.withDefault (Video.blank 0) back)
                             m.messages
                             m.screen
 
@@ -1551,8 +1581,8 @@ display m0 =
 
         -- the border
         ( borderdrawcount, screen4 ) =
-            case m3.renderData of
-                Just rd ->
+            case back of
+                Just backFb ->
                     if gs == GsLevel && not automapActive && win.width /= 320 then
                         let
                             count =
@@ -1563,7 +1593,7 @@ display m0 =
                                     m3.borderdrawcount
                         in
                         if count > 0 then
-                            ( count - 1, View.drawBorder rd m3.viewBlocks screen3 )
+                            ( count - 1, View.drawBorderFrom m3.viewBlocks backFb screen3 )
 
                         else
                             ( count, screen3 )
@@ -1600,6 +1630,13 @@ display m0 =
                 | messages = messages1
                 , palette = palette3
                 , borderdrawcount = borderdrawcount
+                , backScreen =
+                    case m3.renderData of
+                        Just _ ->
+                            Just ( m3.viewBlocks, back )
+
+                        Nothing ->
+                            m3.backScreen
                 , menuactivestate = Menu.active m3.menu
                 , viewactivestate = not automapActive
                 , inhelpscreensstate = Menu.inHelpScreens m3.menu
@@ -1626,11 +1663,54 @@ display m0 =
         in
         meltStep 2
             melt
-            { m4
-                | screen = startScreen
-                , time = m4.time + 1
-                , game = { g4 | world = { world | rng = rng } }
-            }
+            (startPrecache
+                { m4
+                    | screen = startScreen
+                    , time = m4.time + 1
+                    , game = { g4 | world = { world | rng = rng } }
+                }
+            )
+
+
+{-| When a melt into a level starts: list what the level's frames will read, to be
+read a little at each step of the melt (and after it, if the melt ends first), so
+that no frame of the level has to stop to read it.
+-}
+startPrecache : Model -> Model
+startPrecache m =
+    case ( m.game.state, m.renderData ) of
+        ( Level, Just rd ) ->
+            let
+                items =
+                    RenderData.precacheLevel m.data m.game.world m.game.skytexture rd
+            in
+            { m | precache = items, precacheBudget = max 1 ((RenderData.precacheWeight items + precacheSteps - 1) // precacheSteps) }
+
+        _ ->
+            { m | precache = [] }
+
+
+{-| Over how many frames to spread the reading: a melt takes a few more.
+-}
+precacheSteps : Int
+precacheSteps =
+    30
+
+
+{-| Read the next part of what the level's frames will read.
+-}
+precacheStep : Model -> Model
+precacheStep m =
+    case ( m.precache, m.renderData ) of
+        ( _ :: _, Just rd ) ->
+            let
+                ( left, rd2 ) =
+                    RenderData.precache m.precacheBudget m.precache rd
+            in
+            { m | precache = left, renderData = Just rd2 }
+
+        _ ->
+            m
 
 
 {-| The view window after R\_ExecuteSetViewSize.

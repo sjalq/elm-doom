@@ -156,7 +156,13 @@ update msg model =
             in
             case next of
                 Running g ->
-                    ( next, Cmd.batch [ cmd, frame (Host.encodeScreen (Doom.view g.doom)) ] )
+                    -- a frame only when the game showed a new one (at most 35 a
+                    -- second, where animation frames come 60 or more times)
+                    if Doom.frames g.doom /= Doom.frames game.doom then
+                        ( next, Cmd.batch [ cmd, frame (Host.encodeScreen (Doom.view g.doom)) ] )
+
+                    else
+                        ( next, cmd )
 
                 _ ->
                     ( next, cmd )

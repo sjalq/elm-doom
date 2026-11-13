@@ -21,9 +21,9 @@ the first frame's step is 2 tics long, the others 1 (see `Doom.Shell`).
 -}
 
 import Array exposing (Array)
-import Bytes.Encode as E
 import Doom.Random as Random exposing (Rng)
 import Doom.Video as Video exposing (Framebuffer)
+import Doom.Video.Internal as VI
 
 
 {-| A melt under way: the screens it goes from and to, and how far down each column
@@ -165,35 +165,30 @@ stepOnce screen (Melt m) =
 
 
 redraw : Framebuffer -> Framebuffer -> Framebuffer -> Array { old : Int, new : Int, copies : Bool } -> Framebuffer
-redraw screen from to moved =
-    let
-        cols =
-            Array.toList moved
+redraw (VI.Framebuffer screen) (VI.Framebuffer from) (VI.Framebuffer to) moved =
+    -- a column that moves keeps its rows above `old`, shows the new screen's
+    -- rows from `old` to `new` and the old screen's from its top below that
+    VI.Framebuffer
+        (Array.indexedMap
+            (\x col ->
+                case Array.get (x // 2) moved of
+                    Just c ->
+                        if c.copies then
+                            case ( Array.get x to, Array.get x from ) of
+                                ( Just toCol, Just fromCol ) ->
+                                    VI.splice c.old
+                                        Video.height
+                                        (Array.append (Array.slice c.old c.new toCol) (Array.slice 0 (Video.height - c.new) fromCol))
+                                        col
 
-        row y =
-            List.indexedMap
-                (\c col ->
-                    let
-                        x =
-                            2 * c
-                    in
-                    if col.copies && y >= col.old then
-                        if y < col.new then
-                            [ Video.pixel x y to, Video.pixel (x + 1) y to ]
+                                _ ->
+                                    col
 
                         else
-                            [ Video.pixel x (y - col.new) from, Video.pixel (x + 1) (y - col.new) from ]
+                            col
 
-                    else
-                        [ Video.pixel x y screen, Video.pixel (x + 1) y screen ]
-                )
-                cols
-                |> List.concat
-    in
-    List.range 0 (Video.height - 1)
-        |> List.concatMap row
-        |> List.map E.unsignedInt8
-        |> E.sequence
-        |> E.encode
-        |> Video.fromBytes
-        |> Maybe.withDefault screen
+                    Nothing ->
+                        col
+            )
+            screen
+        )

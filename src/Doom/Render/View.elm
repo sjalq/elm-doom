@@ -1,4 +1,4 @@
-module Doom.Render.View exposing (Options, render, window, drawBorder, skyTexture)
+module Doom.Render.View exposing (Options, render, window, drawBorder, backScreen, drawBorderFrom, skyTexture)
 
 {-| The 3D view (r\_main.c's R\_RenderPlayerView with r\_bsp.c, r\_segs.c, r\_plane.c,
 r\_things.c, r\_draw.c, r\_sky.c), drawn into the framebuffer exactly as the original
@@ -11,7 +11,7 @@ order the original writes it; the columns are then put together and the framebuf
 gets them in one go. Pixels the view doesn't cover keep what the framebuffer had,
 as they would in the original's `screens[0]` (the "hall of mirrors").
 
-@docs Options, render, window, drawBorder, skyTexture
+@docs Options, render, window, drawBorder, backScreen, drawBorderFrom, skyTexture
 
 -}
 
@@ -111,22 +111,32 @@ window blocks =
     }
 
 
-{-| R\_FillBackScreen and R\_DrawViewBorder for a reduced view: the flat and bevel patches around the window.
-
-R\_FillBackScreen tiles the flat (FLOOR7\_2, GRNROCK in Doom II) over the 168 rows
-above the status bar of `screens[1]` and draws the bevel around the window there;
-R\_DrawViewBorder copies everything of it outside the window to the screen. Nothing
-happens for a full-width view.
-
+{-| R\_FillBackScreen and R\_DrawViewBorder for a reduced view: the flat and bevel
+patches around the window (`drawBorderFrom` with `backScreen`).
 -}
 drawBorder : RenderData -> Int -> Framebuffer -> Framebuffer
-drawBorder (RenderData static _) blocks fb =
+drawBorder renderData blocks fb =
+    case backScreen renderData blocks of
+        Just back ->
+            drawBorderFrom blocks back fb
+
+        Nothing ->
+            fb
+
+
+{-| R\_FillBackScreen: `screens[1]` for a view size, the flat (FLOOR7\_2, GRNROCK in
+Doom II) tiled over the 168 rows above the status bar with the bevel around the
+window; Nothing for a full-width view (which has no border). It only depends on the
+WAD and the view size, so a host of frames can keep it.
+-}
+backScreen : RenderData -> Int -> Maybe Framebuffer
+backScreen (RenderData static _) blocks =
     let
         win =
             window blocks
     in
     if win.width == 320 then
-        fb
+        Nothing
 
     else
         let
@@ -162,43 +172,48 @@ drawBorder (RenderData static _) blocks fb =
 
             steps from to =
                 List.range 0 ((to - from - 1) // 8) |> List.map (\i -> from + 8 * i)
-
-            back =
-                back0
-                    |> draw "BRDR_T" (steps 0 win.width |> List.map ((+) win.x)) [ win.y - 8 ]
-                    |> draw "BRDR_B" (steps 0 win.width |> List.map ((+) win.x)) [ win.y + win.height ]
-                    |> draw "BRDR_L" [ win.x - 8 ] (steps 0 win.height |> List.map ((+) win.y))
-                    |> draw "BRDR_R" [ win.x + win.width ] (steps 0 win.height |> List.map ((+) win.y))
-                    |> draw "BRDR_TL" [ win.x - 8 ] [ win.y - 8 ]
-                    |> draw "BRDR_TR" [ win.x + win.width ] [ win.y - 8 ]
-                    |> draw "BRDR_BL" [ win.x - 8 ] [ win.y + win.height ]
-                    |> draw "BRDR_BR" [ win.x + win.width ] [ win.y + win.height ]
-
-            (VI.Framebuffer backCols) =
-                back
-
-            (VI.Framebuffer cols) =
-                fb
-
-            -- every pixel of the 168 rows above the status bar outside the window
-            -- (R_DrawViewBorder's R_VideoErase calls cover exactly those)
-            outside x y =
-                y < 168 && (y < win.y || y >= win.y + win.height || x < win.x || x >= win.x + win.width)
         in
+        back0
+            |> draw "BRDR_T" (steps 0 win.width |> List.map ((+) win.x)) [ win.y - 8 ]
+            |> draw "BRDR_B" (steps 0 win.width |> List.map ((+) win.x)) [ win.y + win.height ]
+            |> draw "BRDR_L" [ win.x - 8 ] (steps 0 win.height |> List.map ((+) win.y))
+            |> draw "BRDR_R" [ win.x + win.width ] (steps 0 win.height |> List.map ((+) win.y))
+            |> draw "BRDR_TL" [ win.x - 8 ] [ win.y - 8 ]
+            |> draw "BRDR_TR" [ win.x + win.width ] [ win.y - 8 ]
+            |> draw "BRDR_BL" [ win.x - 8 ] [ win.y + win.height ]
+            |> draw "BRDR_BR" [ win.x + win.width ] [ win.y + win.height ]
+            |> Just
+
+
+{-| R\_DrawViewBorder: copy every pixel of the back screen (`backScreen`) in the 168
+rows above the status bar outside the view window onto the screen (its R\_VideoErase
+calls cover exactly those), a column at a time.
+-}
+drawBorderFrom : Int -> Framebuffer -> Framebuffer -> Framebuffer
+drawBorderFrom blocks (VI.Framebuffer backCols) (VI.Framebuffer cols) =
+    let
+        win =
+            window blocks
+
+        below =
+            win.y + win.height
+    in
+    if win.width == 320 then
+        VI.Framebuffer cols
+
+    else
         VI.Framebuffer
             (Array.indexedMap
                 (\x col ->
                     case Array.get x backCols of
                         Just backCol ->
-                            Array.indexedMap
-                                (\y c ->
-                                    if outside x y then
-                                        Array.get y backCol |> Maybe.withDefault c
+                            if x < win.x || x >= win.x + win.width then
+                                VI.splice 0 168 (Array.slice 0 168 backCol) col
 
-                                    else
-                                        c
-                                )
+                            else
                                 col
+                                    |> VI.splice 0 win.y (Array.slice 0 win.y backCol)
+                                    |> VI.splice below 168 (Array.slice below 168 backCol)
 
                         Nothing ->
                             col

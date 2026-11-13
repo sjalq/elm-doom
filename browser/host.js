@@ -388,6 +388,10 @@ export function run(app, canvas, buffer, status) {
   const wad = readWad(buffer);
   const screen = new Screen(canvas, wad);
   const audio = new Audio(wad);
+  // window.doomTiming: the intervals between new frames (ms, by the animation
+  // frames they were made in, the last 600; every one in `all` if a page sets it
+  // to an array), and how long each took to make, from the start of its animation
+  // frame to its arrival here (`work`, alongside `all`)
   const timing = { frames: 0, drawMs: 0, intervals: [] };
   let last = 0;
   window.doomTiming = timing;
@@ -396,12 +400,21 @@ export function run(app, canvas, buffer, status) {
     const t0 = performance.now();
     screen.draw(f.pixels, f.palette, f.gamma);
     const t1 = performance.now();
+    const at = document.timeline.currentTime;
     timing.drawMs += t1 - t0;
     timing.frames++;
-    if (last) timing.intervals.push(t0 - last);
-    if (timing.intervals.length > 600) timing.intervals.shift();
-    last = t0;
+    if (last) {
+      timing.intervals.push(at - last);
+      if (timing.intervals.length > 600) timing.intervals.shift();
+      if (timing.all) {
+        timing.all.push(at - last);
+        timing.work.push(t1 - at);
+        if (timing.at) timing.at.push(at);
+      }
+    }
+    last = at;
   });
+
   app.ports.audio.subscribe((cmds) => {
     for (const c of cmds) audio.command(c);
   });

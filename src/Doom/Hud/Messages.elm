@@ -265,19 +265,37 @@ erase automap view back (Model st) fb0 =
 
         eraseLine line fb =
             if not automap && view.x /= 0 && line.needsupdate /= 0 then
-                ( { line | needsupdate = line.needsupdate - 1 }
-                , List.foldl
-                    (\y acc ->
-                        if y < view.y || y >= view.y + view.height then
-                            Video.copyRect 0 y Video.width 1 back 0 y acc
+                let
+                    -- the line's rows: those above and below the view window
+                    -- whole, those beside it on either side (in one rectangle each,
+                    -- as the row-by-row R_VideoErase calls come to the same)
+                    bottom =
+                        line.y + lineHeight
+
+                    viewBottom =
+                        view.y + view.height
+
+                    whole from to acc =
+                        if from < to then
+                            Video.copyRect 0 from Video.width (to - from) back 0 from acc
 
                         else
                             acc
-                                |> Video.copyRect 0 y view.x 1 back 0 y
-                                |> Video.copyRect (view.x + view.width) y view.x 1 back (view.x + view.width) y
-                    )
-                    fb
-                    (List.range line.y (line.y + lineHeight - 1))
+
+                    beside from to acc =
+                        if from < to then
+                            acc
+                                |> Video.copyRect 0 from view.x (to - from) back 0 from
+                                |> Video.copyRect (view.x + view.width) from view.x (to - from) back (view.x + view.width) from
+
+                        else
+                            acc
+                in
+                ( { line | needsupdate = line.needsupdate - 1 }
+                , fb
+                    |> whole line.y (min bottom view.y)
+                    |> beside (max line.y view.y) (min bottom viewBottom)
+                    |> whole (max line.y viewBottom) bottom
                 )
 
             else if line.needsupdate /= 0 then

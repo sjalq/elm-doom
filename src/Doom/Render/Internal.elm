@@ -562,10 +562,22 @@ generateComposite tex patches columns =
                 )
                 (Array.repeat tex.height 0)
                 patches
+
+        built =
+            Array.fromList (List.map column compositeColumns)
+
+        h =
+            tex.height
+
+        byteAt i =
+            Array.get (i // h) built |> Maybe.andThen (Array.get (i - (i // h) * h)) |> Maybe.withDefault 0
     in
-    compositeColumns
-        |> List.concatMap (column >> Array.toList)
-        |> Mem.fromList
+    if h <= 0 then
+        Array.empty
+
+    else
+        -- the columns one after another, two bytes to an element (Mem's packing)
+        Array.initialize ((Array.length built * h + 1) // 2) (\k -> byteAt (2 * k) + 256 * byteAt (2 * k + 1))
 
 
 {-| R\_DrawColumnInCache: copy a patch column's posts into a column of the composite.
@@ -604,7 +616,12 @@ drawColumnInCache mem ofs originy cacheheight col =
 
             copied =
                 if count > 0 then
-                    List.foldl (\i c -> Array.set (position + i) (Mem.byte (ofs + 3 + i) mem) c) col (List.range 0 (count - 1))
+                    -- the post's bytes, cut into the column in one piece
+                    Array.append
+                        (Array.append (Array.slice 0 position col)
+                            (Array.initialize count (\i -> Mem.byte (ofs + 3 + i) mem))
+                        )
+                        (Array.slice (position + count) cacheheight col)
 
                 else
                     col

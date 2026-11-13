@@ -24,7 +24,8 @@ type alias Mem =
     Array Int
 
 
-{-| A lump's bytes.
+{-| A lump's bytes. (Read four at a time: each little-endian 32-bit word is two
+elements, its low half first.)
 -}
 fromBytes : Bytes -> Mem
 fromBytes bytes =
@@ -32,21 +33,31 @@ fromBytes bytes =
         n =
             Bytes.width bytes
 
-        pairs =
-            n // 2
+        words =
+            n // 4
+
+        tail acc =
+            case n - words * 4 of
+                3 ->
+                    D.map2 (\w b -> D.Done (List.reverse (b :: w :: acc))) (D.unsignedInt16 LE) D.unsignedInt8
+
+                2 ->
+                    D.map (\w -> D.Done (List.reverse (w :: acc))) (D.unsignedInt16 LE)
+
+                1 ->
+                    D.map (\b -> D.Done (List.reverse (b :: acc))) D.unsignedInt8
+
+                _ ->
+                    D.succeed (D.Done (List.reverse acc))
 
         decoder =
-            D.loop ( pairs, [] )
+            D.loop ( words, [] )
                 (\( left, acc ) ->
                     if left <= 0 then
-                        if n - pairs * 2 == 1 then
-                            D.map (\b -> D.Done (List.reverse (b :: acc))) D.unsignedInt8
-
-                        else
-                            D.succeed (D.Done (List.reverse acc))
+                        tail acc
 
                     else
-                        D.map (\w -> D.Loop ( left - 1, w :: acc )) (D.unsignedInt16 LE)
+                        D.map (\w -> D.Loop ( left - 1, Bitwise.shiftRightZfBy 16 w :: Bitwise.and 0xFFFF w :: acc )) (D.unsignedInt32 LE)
                 )
     in
     D.decode decoder bytes

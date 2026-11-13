@@ -461,7 +461,7 @@ static byte* TiccmdsToDemo (const char* path)
 		 path, (len - i) % 4);
 
     demo = d = malloc (13 + n * 4 + 1);
-    *d++ = VERSION;
+    *d++ = 109;	// v1.9, the version G_DoPlayDemo plays (DOS behaviour)
     *d++ = skill;
     *d++ = episode;
     *d++ = map;

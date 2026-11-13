@@ -7,6 +7,7 @@ module Doom.World exposing
     , addThinker, thinker, setThinker, removeThinker
     , pRandom, startSound, stopSound, buttonOrigin
     , nextValidcount, setScratch
+    , BlockmapHeader
     )
 
 {-| Everything about a level that changes while it is played: the thinkers and things,
@@ -21,6 +22,7 @@ the same way as there.
 # The world
 
 @docs World, SectorState, LineState, SideState, Button, ButtonWhere, ItemRespawn, Exit
+@docs BlockmapHeader
 @docs Scratch, Divline, emptyScratch, maxButtons, itemQueSize
 
 
@@ -79,6 +81,9 @@ import Doom.Thinker exposing (Thinker(..))
   - `validcount`: C's global `validcount`.
   - `scratch`: the file-level variables p\_map.c, p\_maputl.c and p\_sight.c pass
     results through.
+  - `bmap`: p\_setup.c's `bmaporgx`, `bmaporgy`, `bmapwidth`, `bmapheight`, as loaded
+    from the map's blockmap, unless an intercepts overrun (MapUtil.pathTraverse) has
+    since written over them as the DOS executable's does.
   - `gametic`: g\_game.c's `gametic`, the number of tics the game has run since it
     started (a new level doesn't reset it). A\_Tracer reads it. Whoever runs the tic
     loop keeps it: it is the number of the tic being run, going up by one after each
@@ -115,7 +120,18 @@ type alias World =
     , exit : Maybe Exit
     , sounds : List Sound.Event
     , scratch : Scratch
+    , bmap : BlockmapHeader
     , gametic : Int
+    }
+
+
+{-| The blockmap's origin and size in cells.
+-}
+type alias BlockmapHeader =
+    { orgx : Fixed
+    , orgy : Fixed
+    , width : Int
+    , height : Int
     }
 
 

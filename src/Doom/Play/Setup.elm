@@ -117,6 +117,7 @@ newWorld playeringame =
     , exit = Nothing
     , sounds = []
     , scratch = World.emptyScratch
+    , bmap = { orgx = 0, orgy = 0, width = 0, height = 0 }
     , gametic = 0
     }
 
@@ -175,6 +176,7 @@ setupLevel wad data params bodyque old =
                             , lines = loaded.lines
                             , sides = loaded.sides
                             , blocklinks = Array.repeat (bm.width * bm.height) []
+                            , bmap = { orgx = bm.orgx, orgy = bm.orgy, width = bm.width, height = bm.height }
                             , sectorThings = Array.repeat (Array.length loaded.sectors) []
                             , players = players
                             , deathmatchStarts = []

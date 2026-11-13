@@ -476,7 +476,7 @@ build data name lumps =
         , subsectors = subsectors
         , nodes = Array.fromList lumps.nodes
         , blockmap = bm
-        , reject = lumps.reject
+        , reject = padReject numsectors lines lumps.reject
         , things = lumps.things
         }
     , sectors =
@@ -538,6 +538,54 @@ slopeType dx dy =
 
     else
         Negative
+
+
+{-| P\_LoadReject as the DOS executable behaves (chocolate-doom p\_setup.c:P\_LoadReject,
+p\_rejectpad.c:PadRejectArray): a REJECT lump shorter than numsectors² bits is read
+past its end, into the zone memory after it, which in DOS starts with the next block's
+header: its size (`((totallines * 4 + 3) & ~3) + 24`, totallines being P\_GroupLines'
+count of sector-line pairs), 0, PU\_LEVEL (50) and the zone id 0x1d4a11, as 32-bit
+little-endian words; anything after those 16 bytes is 0.
+-}
+padReject : Int -> Array Line -> Array Int -> Array Int
+padReject numsectors lines reject =
+    let
+        minlength =
+            (numsectors * numsectors + 7) // 8
+
+        missing =
+            minlength - Array.length reject
+
+        totallines =
+            Array.foldl
+                (\l n ->
+                    case l.backsector of
+                        Just b ->
+                            if b /= l.frontsector then
+                                n + 2
+
+                            else
+                                n + 1
+
+                        Nothing ->
+                            n + 1
+                )
+                0
+                lines
+
+        word w =
+            List.map (\k -> Bitwise.and 0xFF (Bitwise.shiftRightZfBy (8 * k) w)) [ 0, 1, 2, 3 ]
+
+        pad =
+            List.concatMap word [ Bitwise.and (totallines * 4 + 3) (Bitwise.complement 3) + 24, 0, 50, 0x001D4A11 ]
+                ++ List.repeat (max 0 (missing - 16)) 0
+                |> List.take missing
+    in
+    if missing <= 0 then
+        reject
+
+    else
+        Array.append reject (Array.fromList pad)
 
 
 {-| P\_GroupLines' sector part: each sector's lines (those with it on either side, in

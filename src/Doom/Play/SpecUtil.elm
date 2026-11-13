@@ -127,13 +127,19 @@ findHighestFloorSurrounding env sec world =
 
 
 {-| P\_FindNextHighestFloor sec currentheight: the lowest floor around the sector that
-is above `currentheight`, or `currentheight` if there is none. Like the C source, it
-looks no further once it has found 20 (MAX\_ADJOINING\_SECTORS).
+is above `currentheight`, or `currentheight` if there is none.
+
+As the DOS executable does (chocolate-doom p\_spec.c:P\_FindNextHighestFloor), not
+linuxdoom-1.10, which stops looking after 20: `heightlist[20]` has no limit check, so
+the 21st floor found goes past the array harmlessly and the 22nd lands on `height`
+itself, the floor later ones are compared with, as well as in the list. (A 23rd crashes
+the DOS game; here the list just grows.)
+
 -}
 findNextHighestFloor : Env -> SectorId -> Fixed -> World -> Fixed
 findNextHighestFloor env sec currentheight world =
     let
-        collect others found count =
+        collect others height found count =
             case others of
                 [] ->
                     found
@@ -143,17 +149,21 @@ findNextHighestFloor env sec currentheight world =
                         h =
                             (World.sector other world).floorheight
                     in
-                    if h > currentheight then
-                        if count + 1 >= 20 then
-                            h :: found
+                    if h > height then
+                        collect rest
+                            (if count == 21 then
+                                h
 
-                        else
-                            collect rest (h :: found) (count + 1)
+                             else
+                                height
+                            )
+                            (h :: found)
+                            (count + 1)
 
                     else
-                        collect rest found count
+                        collect rest height found count
     in
-    collect (neighbours env sec) [] 0
+    collect (neighbours env sec) currentheight [] 0
         |> List.minimum
         |> Maybe.withDefault currentheight
 

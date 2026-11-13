@@ -1,3 +1,9 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below).
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - P_InitSwitchList: retail gets the episode 2-3 switches, as in DOS.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -112,7 +118,9 @@ void P_InitSwitchList(void)
 	
     episode = 1;
 
-    if (gamemode == registered)
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom p_switch.c:
+    // P_InitSwitchList): retail gets the registered switches too.
+    if (gamemode == registered || gamemode == retail)
 	episode = 2;
     else
 	if ( gamemode == commercial )

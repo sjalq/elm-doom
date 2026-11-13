@@ -3,6 +3,12 @@
 //  - intercepts[] has room past MAXINTERCEPTS (128) and an overflow is
 //    reported on stderr (Oracle_Overflow), as for spechit in p_map.c.
 
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - PIT_AddLineIntercepts / PIT_AddThingIntercepts: the DOS intercepts
+//    overrun (130th intercept on writes lowfloor..bmapheight), see
+//    chocolate-doom InterceptsOverrun.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -549,6 +555,57 @@ P_BlockThingsIterator
 intercept_t	intercepts[ORACLE_INTERCEPTS];	// DOOM-ORACLE: was MAXINTERCEPTS
 intercept_t*	intercept_p;
 
+// DOOM-ORACLE: DOS behaviour (see chocolate-doom p_maputl.c:InterceptsOverrun,
+// InterceptsMemoryOverrun). From the 130th intercept on, the DOS executable's
+// writes past intercepts[] land on the variables after it: each intercept's
+// frac, isaline and pointer (4 bytes each, 12 per intercept counted from the
+// 130th) are written to what Chocolate's intercepts_overrun table has at that
+// byte. Chocolate writes the host pointer; here a line's is its doom2.exe
+// address as SpechitOverrun models it (0x01C09C98 + 0x3E per line), a thing's 0
+// (doom/src/Doom/Play/MapUtil.elm does the same).
+extern fixed_t	bulletslope;	// p_pspr.c
+extern mapthing_t	playerstarts[MAXPLAYERS];	// doomstat.h
+
+static void Oracle_InterceptsMemoryOverrun (int location, int value)
+{
+    switch (location)
+    {
+      case 12:	lowfloor = value; break;
+      case 16:	openbottom = value; break;
+      case 20:	opentop = value; break;
+      case 24:	openrange = value; break;
+      case 160:	bulletslope = value; break;
+      case 220:	bmapwidth = value; break;
+      case 228:	bmaporgx = value; break;
+      case 232:	bmaporgy = value; break;
+      case 240:	bmapheight = value; break;
+      default:
+	if (location >= 176 && location < 216)
+	{
+	    int index = (location - 176) / 2;
+	    ((short *) playerstarts)[index] = value & 0xffff;
+	    ((short *) playerstarts)[index + 1] = (value >> 16) & 0xffff;
+	}
+	break;
+    }
+}
+
+static void Oracle_InterceptsOverrun (int num_intercepts, intercept_t* intercept)
+{
+    int location;
+    int pointer;
+
+    if (num_intercepts <= MAXINTERCEPTS)
+	return;
+    location = (num_intercepts - MAXINTERCEPTS - 1) * 12;
+    pointer = intercept->isaline
+	? (int) (0x01C09C98u + (unsigned int) (intercept->d.line - lines) * 0x3E)
+	: 0;
+    Oracle_InterceptsMemoryOverrun (location, intercept->frac);
+    Oracle_InterceptsMemoryOverrun (location + 4, intercept->isaline);
+    Oracle_InterceptsMemoryOverrun (location + 8, pointer);
+}
+
 divline_t 	trace;
 boolean 	earlyout;
 int		ptflags;
@@ -610,6 +667,7 @@ PIT_AddLineIntercepts (line_t* ld)
     intercept_p->frac = frac;
     intercept_p->isaline = true;
     intercept_p->d.line = ld;
+    Oracle_InterceptsOverrun (intercept_p - intercepts, intercept_p);	// DOOM-ORACLE
     intercept_p++;
 
     return true;	// continue
@@ -677,6 +735,7 @@ boolean PIT_AddThingIntercepts (mobj_t* thing)
     intercept_p->frac = frac;
     intercept_p->isaline = false;
     intercept_p->d.thing = thing;
+    Oracle_InterceptsOverrun (intercept_p - intercepts, intercept_p);	// DOOM-ORACLE
     intercept_p++;
 
     return true;		// keep going

@@ -1,9 +1,9 @@
-module Doom.Play.Plane exposing (PlaneResult(..), movePlane)
+module Doom.Play.Plane exposing (PlaneResult(..), Crush(..), movePlane, movePlaneWith)
 
 {-| Moving a sector's floor or ceiling (T\_MovePlane, p\_floor.c), which every moving
 floor, ceiling, door and lift uses.
 
-@docs PlaneResult, movePlane
+@docs PlaneResult, Crush, movePlane, movePlaneWith
 
 -}
 
@@ -41,8 +41,46 @@ damage instead), and a ceiling going up never goes back. Reaching `dest` is repo
 
 -}
 movePlane : Env -> SectorId -> Fixed -> Fixed -> Bool -> Int -> Int -> World -> ( PlaneResult, World )
-movePlane env sectorId speed dest crush floorOrCeiling direction world =
+movePlane env sectorId speed dest crush =
+    movePlaneWith env
+        sectorId
+        speed
+        dest
+        (if crush then
+            Crushes
+
+         else
+            NoCrush
+        )
+
+
+{-| The `crush` argument of T\_MovePlane, a C boolean that is not always 0 or 1.
+
+`StairCrush` is a stair step's: EV\_BuildStairs never sets its `crush`, and in the DOS
+executable that field holds neither 0 nor 1 (chocolate-doom p\_floor.c,
+STAIRS\_UNINITIALIZED\_CRUSH\_FIELD\_VALUE = 10). It is true for P\_ChangeSector (things in
+the way take crush damage) but not `== true`, so the step still goes back.
+
+-}
+type Crush
+    = NoCrush
+    | Crushes
+    | StairCrush
+
+
+{-| movePlane with the crush argument as a `Crush`.
+-}
+movePlaneWith : Env -> SectorId -> Fixed -> Fixed -> Crush -> Int -> Int -> World -> ( PlaneResult, World )
+movePlaneWith env sectorId speed dest crushArg floorOrCeiling direction world =
     let
+        -- crushchange: any nonzero value
+        crunch =
+            crushArg /= NoCrush
+
+        -- `crush == true`
+        crush =
+            crushArg == Crushes
+
         plane =
             if floorOrCeiling == 0 then
                 Floor
@@ -58,7 +96,7 @@ movePlane env sectorId speed dest crush floorOrCeiling direction world =
 
         -- put the plane at h and refit things; True if something doesn't fit
         changeTo h w =
-            Map.changeSector env sectorId crush (moveTo h w)
+            Map.changeSector env sectorId crunch (moveTo h w)
 
         goBack w =
             Tuple.second (changeTo lastpos w)

@@ -3,6 +3,11 @@
 //  - P_GroupLines allocated the sector line-pointer array as total*4 bytes;
 //    it is total*sizeof(line_t*) (a heap overflow on 64-bit otherwise).
 
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - P_SetupLevel: a short REJECT lump padded as DOS memory has it
+//    (chocolate-doom PadRejectArray).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -108,6 +113,7 @@ mobj_t**	blocklinks;
 //  used as a PVS lookup as well.
 //
 byte*		rejectmatrix;
+static int	oracle_totallines;	// DOOM-ORACLE: P_GroupLines' total, see P_SetupLevel
 
 
 // Maintain single and multi player starting spots.
@@ -537,6 +543,7 @@ void P_GroupLines (void)
 	}
     }
 	
+    oracle_totallines = total;	// DOOM-ORACLE: for P_SetupLevel's REJECT padding
     // build line tables for each sector	
     linebuffer = Z_Malloc (total*sizeof(*linebuffer), PU_LEVEL, 0);	// DOOM-ORACLE: was total*4
     sector = sectors;
@@ -661,7 +668,31 @@ P_SetupLevel
     P_LoadNodes (lumpnum+ML_NODES);
     P_LoadSegs (lumpnum+ML_SEGS);
 	
-    rejectmatrix = W_CacheLumpNum (lumpnum+ML_REJECT,PU_LEVEL);
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom p_setup.c:P_LoadReject,
+    // p_rejectpad.c:PadRejectArray): a REJECT lump shorter than
+    // numsectors^2 bits is followed by the next zone block's header in DOS
+    // memory (size, 0, PU_LEVEL, ZONEID), then (as Chocolate pads) zeros.
+    {
+	int minlength = (numsectors * numsectors + 7) / 8;
+	int lumplen = W_LumpLength (lumpnum+ML_REJECT);
+	if (lumplen >= minlength)
+	    rejectmatrix = W_CacheLumpNum (lumpnum+ML_REJECT,PU_LEVEL);
+	else
+	{
+	    unsigned int pad[4];
+	    int i;
+	    rejectmatrix = Z_Malloc (minlength, PU_LEVEL, 0);
+	    W_ReadLump (lumpnum+ML_REJECT, rejectmatrix);
+	    pad[0] = ((oracle_totallines * 4 + 3) & ~3) + 24;
+	    pad[1] = 0;
+	    pad[2] = 50;
+	    pad[3] = 0x1d4a11;
+	    for (i = lumplen; i < minlength; i++)
+		rejectmatrix[i] = i - lumplen < 16
+		    ? (pad[(i - lumplen) / 4] >> (((i - lumplen) % 4) * 8)) & 0xff
+		    : 0;
+	}
+    }
     P_GroupLines ();
 
     bodyqueslot = 0;

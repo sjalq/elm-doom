@@ -528,7 +528,7 @@ soundLine pass cmd =
         line =
             case cmd of
                 StartSound c ->
-                    String.join " " [ "start", n c.channel, c.lump, n c.volume, n c.separation, n c.pitch ]
+                    String.join " " [ "start", n c.channel, c.lump, n c.volume, n c.separation, n c.pitch, n c.priority ]
 
                 UpdateSound c ->
                     String.join " " [ "update", n c.channel, n c.volume, n c.separation, n c.pitch ]

@@ -986,7 +986,7 @@ gTicker cmd ( m0, acc0 ) =
                 afterLoad initNew before after { m | game = after } acc
 
             else
-                ( { m | game = after }, acc )
+                ( respawned before after { m | game = after }, acc )
 
         -- BTS_PAUSE's S_PauseSound and S_ResumeSound (and G_InitNew's S_ResumeSound)
         ( m2, acc2 ) =
@@ -1137,6 +1137,41 @@ pendingActions ( m, acc ) =
 
             ( Nothing, Nothing ) ->
                 ( m, acc )
+
+
+{-| P\_SpawnPlayer's ST\_Start and HU\_Start when the console player is respawned in
+a net game (G\_DoReborn), without a level load: their body changed.
+-}
+respawned : Game -> Game -> Model -> Model
+respawned before after m =
+    let
+        console =
+            after.params.consoleplayer
+
+        body g =
+            World.player console g.world |> Maybe.andThen .mo
+    in
+    case after.env of
+        Just env ->
+            if body before /= body after && body after /= Nothing then
+                { m
+                    | palette =
+                        if m.stStopped then
+                            m.palette
+
+                        else
+                            0
+                    , stStopped = False
+                    , stPalette = -1
+                    , statusBar = StatusBar.start env after.world console m.statusBar
+                    , messages = Messages.start env after.world m.messages
+                }
+
+            else
+                m
+
+        Nothing ->
+            m
 
 
 {-| Whether the tic loaded a level (G\_DoLoadLevel).

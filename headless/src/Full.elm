@@ -7,6 +7,7 @@ file.
     doom-headless -full -iwad <wad> [-frames FILE] [-framesfrom N] [-framesto N]
         [-events FILE] [-iterations N] [-warp E M | -warp M] [-skill N] [-episode N]
         [-playdemo LUMP|FILE] [-nomonsters] [-respawn] [-fast] [-set NAME VALUE]...
+        [-savedir DIR] [-soundlog FILE]
 
   - `-frames FILE`: for every frame (each I\_FinishUpdate, the wipe's included) a record
     of a little-endian u32 frame number (counting from 0), a byte for the palette, a
@@ -16,6 +17,10 @@ file.
     `<pass> mouse <buttons> <dx> <dy>` (Doom key codes), posted before that pass (0 is
     the first) in the file's order.
   - `-iterations N`: stop after N passes; otherwise run until the game ends.
+  - `-savedir DIR`: where the saved games are (doomsav0.dsg to doomsav5.dsg, as the
+    original keeps them in the current directory, the default).
+  - `-soundlog FILE`: every sound and music command, a line each, after the pass
+    number (-1 before the first), as doom/oracle/compare\_sounds.py reads them.
   - `-set NAME VALUE`: a configuration setting (m\_misc.c's names: screenblocks,
     detaillevel, usegamma, show\_messages, mouse\_sensitivity, sfx\_volume,
     music\_volume, snd\_channels, key\_right ... key\_speed, mouseb\_fire,
@@ -282,7 +287,7 @@ run env args =
             , framesFrom = 0
             , framesTo = 0x7FFFFFFF
             , events = Nothing
-            , savedir = Nothing
+            , savedir = Just "."
             , soundlog = Nothing
             , iterations = Nothing
             , playdemo = Nothing

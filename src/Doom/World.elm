@@ -79,6 +79,10 @@ import Doom.Thinker exposing (Thinker(..))
   - `validcount`: C's global `validcount`.
   - `scratch`: the file-level variables p\_map.c, p\_maputl.c and p\_sight.c pass
     results through.
+  - `gametic`: g\_game.c's `gametic`, the number of tics the game has run since it
+    started (a new level doesn't reset it). A\_Tracer reads it. Whoever runs the tic
+    loop keeps it: it is the number of the tic being run, going up by one after each
+    tic, as TryRunTics does after G\_Ticker.
 
 -}
 type alias World =
@@ -111,6 +115,7 @@ type alias World =
     , exit : Maybe Exit
     , sounds : List Sound.Event
     , scratch : Scratch
+    , gametic : Int
     }
 
 
@@ -215,7 +220,8 @@ functions to read (named as there):
     `earlyout`, `ptflags`.
   - p\_sight.c: `sightzstart`, `sightTopslope`, `sightBottomslope`, `strace`, `t2x`,
     `t2y`.
-  - p\_enemy.c: `soundtarget`, `vileobj`, `viletryx`, `viletryy`.
+  - p\_enemy.c: `soundtarget`, `vileobj`, `viletryx`, `viletryy`, `corpsehit`
+    (listed last).
   - p\_pspr.c: `swingx`, `swingy`, `bulletslope`.
   - p\_user.c: `onground`.
 
@@ -274,6 +280,7 @@ type alias Scratch =
     , swingy : Fixed
     , bulletslope : Fixed
     , onground : Bool
+    , corpsehit : Maybe ThinkerId
     }
 
 
@@ -338,6 +345,7 @@ emptyScratch =
     , swingy = 0
     , bulletslope = 0
     , onground = False
+    , corpsehit = Nothing
     }
 
 

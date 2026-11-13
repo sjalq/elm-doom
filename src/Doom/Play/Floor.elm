@@ -1,8 +1,8 @@
-module Doom.Play.Floor exposing (think, doFloor, buildStairs, doDonut)
+module Doom.Play.Floor exposing (think, doFloorByTag, doFloor, buildStairs, doDonut)
 
 {-| Moving floors and stairs (p\_floor.c, and EV\_DoDonut from p\_spec.c).
 
-@docs think, doFloor, buildStairs, doDonut
+@docs think, doFloorByTag, doFloor, buildStairs, doDonut
 
 -}
 
@@ -44,3 +44,10 @@ buildStairs =
 doDonut : Env -> LineId -> World -> ( Bool, World )
 doDonut =
     Debug.todo "Doom.Play.Floor.doDonut"
+
+
+{-| EV\_DoFloor on every sector with this tag (a line with only a tag, as A\_BossDeath's `junk` line). Stub: doom-specials implements it.
+-}
+doFloorByTag : Env -> Int -> Thinker.FloorType -> World -> ( Bool, World )
+doFloorByTag =
+    Debug.todo "Doom.Play.Floor.doFloorByTag"

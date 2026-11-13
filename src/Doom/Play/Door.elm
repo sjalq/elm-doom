@@ -1,8 +1,8 @@
-module Doom.Play.Door exposing (think, doLockedDoor, doDoor, verticalDoor, spawnDoorCloseIn30, spawnDoorRaiseIn5Mins)
+module Doom.Play.Door exposing (think, doDoorByTag, doLockedDoor, doDoor, verticalDoor, spawnDoorCloseIn30, spawnDoorRaiseIn5Mins)
 
 {-| Doors (p\_doors.c).
 
-@docs think, doLockedDoor, doDoor, verticalDoor, spawnDoorCloseIn30, spawnDoorRaiseIn5Mins
+@docs think, doDoorByTag, doLockedDoor, doDoor, verticalDoor, spawnDoorCloseIn30, spawnDoorRaiseIn5Mins
 
 -}
 
@@ -58,3 +58,10 @@ spawnDoorCloseIn30 =
 spawnDoorRaiseIn5Mins : Env -> SectorId -> World -> World
 spawnDoorRaiseIn5Mins =
     Debug.todo "Doom.Play.Door.spawnDoorRaiseIn5Mins"
+
+
+{-| EV\_DoDoor on every sector with this tag (a line with only a tag, as A\_KeenDie's `junk` line). Stub: doom-specials implements it.
+-}
+doDoorByTag : Env -> Int -> Thinker.DoorType -> World -> ( Bool, World )
+doDoorByTag =
+    Debug.todo "Doom.Play.Door.doDoorByTag"

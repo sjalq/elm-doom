@@ -100,6 +100,8 @@ extern	int		detailshift;
 extern void		(*colfunc) (void);
 extern void		(*basecolfunc) (void);
 extern void		(*fuzzcolfunc) (void);
+// DOOM-ORACLE: declared for r_things.c (DOS behaviour, see R_DrawVisSprite)
+extern void		(*transcolfunc) (void);
 // No shadow effects on floors.
 extern void		(*spanfunc) (void);
 

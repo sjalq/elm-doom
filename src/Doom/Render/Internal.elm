@@ -124,8 +124,6 @@ type alias SpriteFrame =
     only clears `cachedheight`, so a plane at the viewer's own height reuses what an
     earlier frame left in them.
   - `view`: the tables for the view size last drawn.
-  - `columnofs`: r\_draw.c's `columnofs[MAXWIDTH]` (low detail reads past the
-    view's width).
 
 -}
 type alias Cache =
@@ -137,7 +135,6 @@ type alias Cache =
     , cachedXstep : Array Int
     , cachedYstep : Array Int
     , view : Maybe ViewSize
-    , columnofs : Array Int
     }
 
 

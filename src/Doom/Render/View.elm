@@ -1,4 +1,4 @@
-module Doom.Render.View exposing (Options, render, window, drawBorder)
+module Doom.Render.View exposing (Options, render, window, drawBorder, skyTexture)
 
 {-| The 3D view (r\_main.c's R\_RenderPlayerView with r\_bsp.c, r\_segs.c, r\_plane.c,
 r\_things.c, r\_draw.c, r\_sky.c), drawn into the framebuffer exactly as the original
@@ -11,11 +11,13 @@ order the original writes it; the columns are then put together and the framebuf
 gets them in one go. Pixels the view doesn't cover keep what the framebuffer had,
 as they would in the original's `screens[0]` (the "hall of mirrors").
 
-@docs Options, render, window, drawBorder
+@docs Options, render, window, drawBorder, skyTexture
 
 -}
 
 import Array exposing (Array)
+import Doom.Data exposing (Data)
+import Doom.Defs exposing (GameMode(..))
 import Doom.Level exposing (LineId)
 import Doom.Play.Env exposing (Env)
 import Doom.Render.Compose as Compose
@@ -29,13 +31,40 @@ import Doom.World exposing (World)
 
 {-| The view settings: `screenblocks` 3 to 11 (10: full width above the status bar,
 11: the whole screen), `detailshift` 0 (high) or 1 (low detail), and the player whose
-eyes it is.
+eyes it is, and `skytexture`, the sky G\_InitNew chose (`skyTexture`) when the
+game was started or loaded: the DOS v1.9 executables keep it for every level after
+(Doom II's sky "never changes").
 -}
 type alias Options =
     { screenblocks : Int
     , detailshift : Int
     , player : Int
+    , skytexture : Int
     }
+
+
+{-| G\_InitNew's `skytexture` for a game started at an episode and map: SKY1 to SKY4
+by episode, or in Doom II SKY1 below MAP12, SKY2 below MAP21, else SKY3 (texture
+numbers, 0 if the WAD lacks the texture).
+-}
+skyTexture : Data -> Int -> Int -> Int
+skyTexture data episode map =
+    let
+        name =
+            if data.gameMode == Commercial then
+                if map < 12 then
+                    "SKY1"
+
+                else if map < 21 then
+                    "SKY2"
+
+                else
+                    "SKY3"
+
+            else
+                "SKY" ++ String.fromInt (clamp 1 4 episode)
+    in
+    Doom.Data.textureNumForName name data
 
 
 {-| R\_RenderPlayerView: draw the view into its window. Also gives the lines it drew

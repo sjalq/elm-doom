@@ -139,7 +139,7 @@ run draw tics game0 rd0 =
                     ( True, Just ( env, world ) ) ->
                         let
                             ( fb2, _, rd2 ) =
-                                View.render rd env world { screenblocks = 9, detailshift = 0, player = Game.consolePlayer next } fb
+                                View.render rd env world { screenblocks = 9, detailshift = 0, player = Game.consolePlayer next, skytexture = View.skyTexture env.data env.params.episode env.params.map } fb
 
                             sum =
                                 Bytes.width (Video.toBytes fb2)

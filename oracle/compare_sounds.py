@@ -15,6 +15,7 @@ headless sound layer by s_sound.c, "<iteration> " followed by
     musicvolume <v>          (every I_SetMusicVolume call)
     sfxvolume <v>            (every S_SetSfxVolume call)
 iteration is the 0-based D_DoomLoop iteration, -1 before the loop starts.
+Volumes are DOS v1.9's: menu value (0..15) * 8, so sfx 0..120.
 "Is playing" rule (src/i_headless.c): a sound started at gametic T plays
 while gametic < T + ceil(N*35/R), N and R the sample count (u32 at lump
 offset 4) and rate (u16 at offset 2) of the lump the mixer would play.

@@ -109,7 +109,9 @@
 //     musicvolume <v>        (every I_SetMusicVolume call)
 //     sfxvolume <v>          (every S_SetSfxVolume call)
 // Calls before the first loop iteration are logged with iteration -1. The
-// "is playing" rule is in i_headless.c.
+// "is playing" rule is in i_headless.c. Volumes are on DOS v1.9's scale:
+// the menu/config value (0..15, default 8) times 8, so sfx volumes run
+// 0..120 (m_menu.c, d_main.c; linuxdoom had dropped the * 8).
 //
 // SAVES. -savedir DIR: the process works in DIR (created if missing) once
 // every input path has been resolved, so the original doomsav<n>.dsg files

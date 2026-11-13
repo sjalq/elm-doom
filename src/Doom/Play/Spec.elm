@@ -515,8 +515,8 @@ scrollWalls env world =
         world.lineSpecialList
 
 
-{-| The click comes from the button's sector (C passes the address of the button's
-`soundorg` field itself, which only places the sound).
+{-| The click comes from `Doom.Sound.FromButton i`: C passes the address of the
+button's `soundorg` field itself, not the sector origin it points to.
 -}
 countDownButtons : Env -> World -> World
 countDownButtons env world =
@@ -546,9 +546,10 @@ countDownButtons env world =
                                     ButtonBottom ->
                                         { s | bottomtexture = b.btexture }
                         in
-                        { w | buttons = Array.set i Nothing w.buttons }
+                        w
                             |> World.updateSide sideId restore
-                            |> World.startSound (Sound.FromSector b.soundorg) Sfx.Swtchn
+                            |> World.startSound (Sound.FromButton i) Sfx.Swtchn
+                            |> (\w2 -> { w2 | buttons = Array.set i Nothing w2.buttons })
 
                 _ ->
                     w

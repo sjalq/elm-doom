@@ -38,9 +38,33 @@ void P_Init (void);
 
 // symbols the oracle's copy of the game expects from oracle_main.c
 byte*	oracle_demodata = NULL;
+boolean	oracle_full = false;
 void Oracle_Flush (void) {}
 void Oracle_LevelTic (void) {}
 void Oracle_Overflow (const char* what, int count, int capacity) {}
+void Oracle_BeginIteration (void) {}
+void Oracle_EndIteration (void) {}
+void Oracle_SetPalette (byte* palette) {}
+void Oracle_FinishUpdate (void) {}
+void Oracle_SoundLog (const char* fmt, ...) {}
+void Oracle_SoundLogSfxVolume (int volume) {}
+
+// s_sound.c is left out: its S_StartSound draws M_Random for the pitch, which
+// the Elm side leaves to the host; these log what the screens ask for instead
+int	snd_SfxVolume = 15;
+int	snd_MusicVolume = 15;
+int	numChannels = 8;
+int	oracle_snd_channel = -1;
+void S_Init (int sfxVolume, int musicVolume) {}
+void S_Start (void) {}
+void S_StartSoundAtVolume (void* origin, int id, int volume) {}
+void S_StopSound (void* origin) {}
+void S_PauseSound (void) {}
+void S_ResumeSound (void) {}
+void S_UpdateSounds (void* listener) {}
+void S_SetMusicVolume (int volume) {}
+void S_SetSfxVolume (int volume) {}
+void S_StopMusic (void) {}
 
 static FILE*	soundlog;
 static int	tic;

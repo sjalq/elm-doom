@@ -1,14 +1,20 @@
-module Doom.Intermission.Draw exposing (drawer, animatedBackgrounds)
+module Doom.Intermission.Draw exposing (drawer)
 
 {-| The intermission screen (wi\_stuff.c's WI\_Drawer and its pieces): the background
-(the episode's map, or INTERPIC), the finished and next level's names, the statistics
-with their numbers, percentages and times, the net game and deathmatch tables, and on
-the episode maps the splats on the levels done and the blinking "you are here".
+(the episode's map, or INTERPIC) with its animations, the finished and next level's
+names, the statistics with their numbers, percentages and times, the net game and
+deathmatch tables, and on the episode maps the splats on the levels done and the
+blinking "you are here".
 
 The pictures are read from the WAD each time, as W\_CacheLumpName does; one missing
 is left out (the original stops with an error).
 
-@docs drawer, animatedBackgrounds
+This is DOS Doom v1.9's screen. linuxdoom-1.10 differs in two bugs, both tests of an
+enum constant (always true) instead of a variable: it never draws the background
+animations (`if (commercial)` in WI\_drawAnimatedBack), and a co-op game asks for a
+French "items" picture no IWAD has (`if (french)` in WI\_loadData).
+
+@docs drawer
 
 -}
 
@@ -17,17 +23,6 @@ import Doom.Defs as Defs exposing (GameMode(..))
 import Doom.Intermission exposing (Intermission, Stage(..))
 import Doom.Video as Video exposing (Framebuffer, Patch)
 import Doom.Wad as Wad exposing (Wad)
-
-
-{-| Whether the background animations (the lights on the episode maps) are drawn.
-They are not: linuxdoom-1.10's WI\_drawAnimatedBack begins with `if (commercial)
-return;`, testing the enum constant (always true) instead of `gamemode ==
-commercial`, so the Linux release never drew them though it keeps timing them. The
-drawing is kept here, behind this switch, as the DOS versions show it.
--}
-animatedBackgrounds : Bool
-animatedBackgrounds =
-    False
 
 
 {-| WI\_Drawer: the current stage's screen. Everything is drawn over the background
@@ -125,11 +120,11 @@ slamBackground p wi =
     Video.blank 0 |> draw 0 0 (p.get name)
 
 
-{-| WI\_drawAnimatedBack (see `animatedBackgrounds`).
+{-| WI\_drawAnimatedBack: each animation's current frame, if it has one showing.
 -}
 drawAnimatedBack : Pics -> Intermission -> Framebuffer -> Framebuffer
 drawAnimatedBack p wi fb =
-    if not animatedBackgrounds || wi.ctx.gameMode == Commercial || wi.wbs.epsd > 2 then
+    if wi.ctx.gameMode == Commercial || wi.wbs.epsd > 2 then
         fb
 
     else
@@ -528,21 +523,10 @@ drawNetgameStats p wi =
         pwidth =
             widthOf (p.get "WIPCNT")
 
-        -- WI_loadData's `if (french)` tests the enum constant, always true, so
-        -- co-op games want the French "objets" (WIOBJ); IWADs don't have it (the
-        -- original stops with an error), so then it is the usual "items"
-        coopItems =
-            case p.get "WIOBJ" of
-                Just pt ->
-                    Just pt
-
-                Nothing ->
-                    p.get "WIOSTI"
-
         titles fb =
             fb
                 |> draw (statsX + spacingX - widthOf kills) statsY kills
-                |> drawTitle (statsX + 2 * spacingX) coopItems
+                |> drawTitle (statsX + 2 * spacingX) (p.get "WIOSTI")
                 |> drawTitle (statsX + 3 * spacingX) (p.get "WIOSTS")
                 |> (if wi.dofrags /= 0 then
                         drawTitle (statsX + 4 * spacingX) (p.get "WIFRGS")

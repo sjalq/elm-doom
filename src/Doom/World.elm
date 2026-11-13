@@ -5,7 +5,7 @@ module Doom.World exposing
     , sector, updateSector, lineState, updateLine, sideState, updateSide
     , player, updatePlayer, playerMobj
     , addThinker, thinker, setThinker, removeThinker
-    , pRandom, startSound, stopSound
+    , pRandom, startSound, stopSound, buttonOrigin
     , nextValidcount, setScratch
     )
 
@@ -46,7 +46,7 @@ the same way as there.
 
 # Randomness, sound and the rest
 
-@docs pRandom, startSound, stopSound
+@docs pRandom, startSound, stopSound, buttonOrigin
 @docs nextValidcount, setScratch
 
 -}
@@ -560,11 +560,44 @@ pRandom world =
     ( n, { world | rng = rng } )
 
 
-{-| S\_StartSound.
+{-| S\_StartSound. The sound is listed with where its thing and the players are
+now, as the C source hears it at once (`Doom.Sound.StartAt`).
 -}
 startSound : Sound.Origin -> Sfx -> World -> World
 startSound origin sfx world =
-    { world | sounds = Sound.Start origin sfx :: world.sounds }
+    let
+        spot id =
+            mobj id world |> Maybe.map (\m -> { mo = m.id, x = m.x, y = m.y, angle = m.angle })
+
+        moment =
+            { gametic = world.gametic
+            , origin =
+                case origin of
+                    Sound.FromMobj id ->
+                        spot id
+
+                    Sound.FromButton i ->
+                        Just (buttonOrigin i world)
+
+                    _ ->
+                        Nothing
+            , players = Array.toList world.players |> List.map (\p -> p.mo |> Maybe.andThen spot)
+            }
+    in
+    { world | sounds = Sound.StartAt origin sfx moment :: world.sounds }
+
+
+{-| Where `Doom.Sound.FromButton i` is heard from: the next button slot's `btexture`
+and `btimer`, read as a thing's x and y (see `Doom.Sound.Origin`).
+-}
+buttonOrigin : Int -> World -> Sound.Spot
+buttonOrigin i world =
+    case Array.get (i + 1) world.buttons of
+        Just (Just b) ->
+            { mo = -1, x = b.btexture, y = b.btimer, angle = 0 }
+
+        _ ->
+            { mo = -1, x = 0, y = 0, angle = 0 }
 
 
 {-| S\_StopSound.

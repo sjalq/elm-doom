@@ -50,6 +50,18 @@ SCENARIOS = [
     ("fin-map31", "2", "-tics 200 -finale 1 31"),
     ("fin-map30-cast", "2",
      "-tics 3000 -press 60,61,62,900 -key 400,401,700,1200,1500,1900,2300,2600,2900 -finale 1 30"),
+    # the episode maps' animations: Freedoom's WIAeeaaff are 1x1 placeholders, so
+    # these use a copy of freedoom1.wad ("A") whose WIA pictures are the big digits
+    # (WINUM<frame>), visible and different for every frame
+    ("anim-e1", "A", "-tics 400 -press 30,150,300 -wi 0 2 3 0 50 40 5 2625 0 -plyr 0 37 21 3 4100 0 0 0 0"),
+    ("anim-e1-secret", "A", "-tics 300 -press 3,40 -wi 0 8 3 1 10 10 1 1000 0 -plyr 0 3 1 1 300 0 0 0 0"),
+    ("anim-e2-next8", "A", "-tics 400 -press 5,60,250 -wi 1 6 7 0 10 10 1 1000 0 -plyr 0 3 1 1 300 0 0 0 0"),
+    ("anim-e2-next4", "A", "-tics 300 -press 5,60 -wi 1 3 4 0 10 10 1 1000 0 -plyr 0 3 1 1 300 0 0 0 0"),
+    ("anim-e3", "A", "-tics 400 -press 30,150,300 -wi 2 4 5 1 10 10 1 1000 0 -plyr 0 3 1 1 300 0 0 0 0"),
+    ("anim-e1-net", "A", "-tics 400 -press 300 -net -wi 0 3 4 0 40 30 4 2000 1 "
+     "-plyr 0 20 10 1 3000 0 3 1 0 -plyr 1 15 20 3 3000 2 0 0 0"),
+    ("anim-e3-dm", "A", "-tics 300 -press 200 -dm -net -wi 2 4 5 0 1 1 1 0 1 "
+     "-plyr 0 0 0 0 0 0 5 2 0 -plyr 1 0 0 0 0 3 1 0 0"),
 ]
 
 
@@ -103,21 +115,36 @@ def lump(wad, wanted):
     return found
 
 
+def anim_wad(wad):
+    """A copy of the WAD with every WIAeeaaff lump replaced by WINUM<ff+1>."""
+    path = "out/anim-%s" % os.path.basename(wad)
+    if os.path.exists(path):
+        return path
+    with open(wad, "rb") as f:
+        data = f.read()
+    n, off = struct.unpack("<II", data[4:12])
+    entries = [struct.unpack("<II8s", data[off + 16 * i: off + 16 * i + 16]) for i in range(n)]
+    lumps = [(name, data[pos:pos + size]) for pos, size, name in entries]
+    digits = {name.rstrip(b"\0"): body for name, body in lumps}
+    out, directory = bytearray(b"IWAD" + b"\0" * 8), []
+    for name, body in lumps:
+        bare = name.rstrip(b"\0")
+        if bare.startswith(b"WIA") and len(bare) == 8:
+            body = digits[b"WINUM%d" % (int(bare[6:8]) + 1)]
+        directory.append(struct.pack("<II8s", len(out), len(body), name))
+        out += body
+    out[4:12] = struct.pack("<II", n, len(out))
+    out += b"".join(directory)
+    with open(path, "wb") as f:
+        f.write(out)
+    return path
+
+
 def playpal(wad):
     raw = lump(wad, b"PLAYPAL")
     if raw is None:
         return [(k, k, k) for k in range(256)]
     return [tuple(raw[3 * k:3 * k + 3]) for k in range(256)]
-
-
-def wiobj_pwad(wad):
-    """A PWAD with the IWAD's WIOSTI as WIOBJ."""
-    data = lump(wad, b"WIOSTI")
-    path = "out/wiobj-%s.wad" % os.path.basename(wad)
-    with open(path, "wb") as f:
-        f.write(b"PWAD" + struct.pack("<II", 1, 12 + len(data)) + data
-                + struct.pack("<II8s", 12, len(data), b"WIOBJ"))
-    return path
 
 
 def main():
@@ -132,18 +159,14 @@ def main():
     for name, which, args in SCENARIOS:
         if a.only and name not in a.only.split(","):
             continue
-        wad = a.wad if which == "1" else a.wad2
+        wad = {"1": a.wad, "2": a.wad2, "A": a.wad}[which]
+        if which == "A" and os.path.exists(wad):
+            wad = anim_wad(wad)
         if not os.path.exists(wad):
             print("%-16s skipped (no %s)" % (name, wad))
             continue
         argv = args.split()
-        extra = []
-        if "-net" in argv and "-dm" not in argv:
-            # linuxdoom-1.10 tests the enum constant `french` (always true) and so
-            # wants WIOBJ for co-op "items", which IWADs don't have (I_Error); give
-            # it WIOSTI under that name, as the Elm port falls back to
-            extra = ["-file", wiobj_pwad(wad)]
-        run(["./harness", "-iwad", wad, "-out", "out/%s-c" % name] + extra + argv)
+        run(["./harness", "-iwad", wad, "-out", "out/%s-c" % name] + argv)
         run(["./screen-check", "-iwad", wad, "-out", "out/%s-elm" % name] + argv)
         with open("out/%s-c.frames" % name, "rb") as f:
             cf = f.read()

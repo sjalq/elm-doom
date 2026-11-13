@@ -50,7 +50,15 @@
         "Doom.Play.Spawn",
         "Doom.Play.Action",
         "Doom.Play.Tick",
-        "Doom.StateHash"
+        "Doom.StateHash",
+        "Doom.Wad",
+        "Doom.Data.Load",
+        "Doom.Level.Load",
+        "Doom.Play.Setup",
+        "Doom.Demo",
+        "Doom.Input",
+        "Doom.Intermission",
+        "Doom.Game"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {

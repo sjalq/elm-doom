@@ -1,0 +1,705 @@
+module Doom.Intermission exposing
+    ( WbStart, WbPlayer, Intermission, Stage(..), Outcome(..), Context
+    , start, ticker
+    , percent
+    )
+
+{-| The intermission between levels (wi\_stuff.c's WI\_Start and WI\_Ticker, without
+the drawing): the statistics counting up, the next level's spot on the episode map,
+and the button presses that hurry it along. Its timing matters to demos, which keep
+recording ticcmds through it.
+
+`wbs` is the `wbstartstruct_t` G\_DoCompleted fills in; the counters are what a
+renderer shows.
+
+@docs WbStart, WbPlayer, Intermission, Stage, Outcome, Context
+@docs start, ticker
+@docs percent
+
+-}
+
+import Array exposing (Array)
+import Bitwise
+import Doom.Defs as Defs exposing (GameMode(..))
+import Doom.Info.Sfx as Sfx exposing (Sfx)
+import Doom.Sound as Sound
+import Doom.Ticcmd as Ticcmd
+import Doom.World as World exposing (World)
+
+
+{-| wbstartstruct\_t: `epsd` and `last`/`next` are 0-based; `partime` in tics.
+-}
+type alias WbStart =
+    { epsd : Int
+    , didsecret : Bool
+    , last : Int
+    , next : Int
+    , maxkills : Int
+    , maxitems : Int
+    , maxsecret : Int
+    , maxfrags : Int
+    , partime : Int
+    , pnum : Int
+    , plyr : Array WbPlayer
+    }
+
+
+{-| wbplayerstruct\_t.
+-}
+type alias WbPlayer =
+    { in_ : Bool
+    , skills : Int
+    , sitems : Int
+    , ssecret : Int
+    , stime : Int
+    , frags : Array Int
+    }
+
+
+{-| stateenum\_t.
+-}
+type Stage
+    = StatCount
+    | ShowNextLoc
+    | NoState
+
+
+{-| wi\_stuff.c's statics. `statState` is `sp_state`, `ng_state` or `dm_state` (which
+one by the kind of game).
+-}
+type alias Intermission =
+    { wbs : WbStart
+    , stage : Stage
+    , acceleratestage : Bool
+    , cnt : Int
+    , bcnt : Int
+    , statState : Int
+    , cntKills : Array Int
+    , cntItems : Array Int
+    , cntSecret : Array Int
+    , cntFrags : Array Int
+    , cntTime : Int
+    , cntPar : Int
+    , cntPause : Int
+    , dofrags : Int
+    , dmFrags : Array (Array Int)
+    , dmTotals : Array Int
+    }
+
+
+{-| What a tic of the intermission led to: carry on, or G\_WorldDone.
+-}
+type Outcome
+    = Continue
+    | WorldDone
+
+
+{-| What the intermission needs to know about the game.
+-}
+type alias Context =
+    { gameMode : GameMode
+    , deathmatch : Bool
+    , netgame : Bool
+    , playeringame : Array Bool
+    }
+
+
+{-| WI\_Start. `dofrags` is wi\_stuff.c's static of that name from the last
+intermission, which it adds to rather than resets.
+-}
+start : Context -> Int -> WbStart -> Intermission
+start ctx dofrags wbs0 =
+    let
+        wbs =
+            { wbs0
+                | maxkills = atLeastOne wbs0.maxkills
+                , maxitems = atLeastOne wbs0.maxitems
+                , maxsecret = atLeastOne wbs0.maxsecret
+                , epsd =
+                    if ctx.gameMode /= Retail && wbs0.epsd > 2 then
+                        wbs0.epsd - 3
+
+                    else
+                        wbs0.epsd
+            }
+
+        zeros =
+            Array.repeat Defs.maxPlayers 0
+
+        base =
+            { wbs = wbs
+            , stage = StatCount
+            , acceleratestage = False
+            , cnt = 0
+            , bcnt = 0
+            , statState = 1
+            , cntKills = zeros
+            , cntItems = zeros
+            , cntSecret = zeros
+            , cntFrags = zeros
+            , cntTime = 0
+            , cntPar = 0
+            , cntPause = Defs.ticrate
+            , dofrags = dofrags
+            , dmFrags = Array.repeat Defs.maxPlayers zeros
+            , dmTotals = zeros
+            }
+    in
+    if ctx.deathmatch then
+        base
+
+    else if ctx.netgame then
+        let
+            sum =
+                players ctx |> List.foldl (\i acc -> acc + fragSum ctx wbs i) dofrags
+        in
+        { base
+            | dofrags =
+                if sum /= 0 then
+                    1
+
+                else
+                    0
+        }
+
+    else
+        { base
+            | cntKills = Array.set 0 -1 zeros
+            , cntItems = Array.set 0 -1 zeros
+            , cntSecret = Array.set 0 -1 zeros
+            , cntTime = -1
+            , cntPar = -1
+        }
+
+
+atLeastOne : Int -> Int
+atLeastOne n =
+    if n == 0 then
+        1
+
+    else
+        n
+
+
+players : Context -> List Int
+players ctx =
+    List.range 0 (Defs.maxPlayers - 1) |> List.filter (\i -> Array.get i ctx.playeringame == Just True)
+
+
+{-| `(count * 100) / max`, as the stats show it.
+-}
+percent : Int -> Int -> Int
+percent count most =
+    (count * 100) // most
+
+
+get : Int -> Array Int -> Int
+get i a =
+    Array.get i a |> Maybe.withDefault 0
+
+
+plyr : Int -> WbStart -> WbPlayer
+plyr i wbs =
+    Array.get i wbs.plyr |> Maybe.withDefault { in_ = False, skills = 0, sitems = 0, ssecret = 0, stime = 0, frags = Array.repeat Defs.maxPlayers 0 }
+
+
+{-| WI\_fragSum.
+-}
+fragSum : Context -> WbStart -> Int -> Int
+fragSum ctx wbs n =
+    let
+        p =
+            plyr n wbs
+    in
+    (players ctx |> List.filter (\i -> i /= n) |> List.map (\i -> get i p.frags) |> List.sum)
+        - get n p.frags
+
+
+{-| WI\_Ticker: one tic, given the world (for the players' buttons and their
+`attackdown`/`usedown`, which WI\_checkForAccelerate updates, and for sounds).
+-}
+ticker : Context -> World -> Intermission -> ( Intermission, World, Outcome )
+ticker ctx world0 wi0 =
+    let
+        ( accelerate, world ) =
+            checkForAccelerate ctx world0
+
+        wi =
+            { wi0
+                | bcnt = wi0.bcnt + 1
+                , acceleratestage = wi0.acceleratestage || accelerate
+            }
+    in
+    case wi.stage of
+        StatCount ->
+            let
+                ( next, sounds ) =
+                    if ctx.deathmatch then
+                        updateDeathmatchStats ctx wi
+
+                    else if ctx.netgame then
+                        updateNetgameStats ctx wi
+
+                    else
+                        updateStats ctx wi
+            in
+            ( next, playAll sounds world, Continue )
+
+        ShowNextLoc ->
+            let
+                cnt =
+                    wi.cnt - 1
+            in
+            if cnt == 0 || wi.acceleratestage then
+                ( initNoState wi, world, Continue )
+
+            else
+                ( { wi | cnt = cnt }, world, Continue )
+
+        NoState ->
+            let
+                cnt =
+                    wi.cnt - 1
+            in
+            if cnt == 0 then
+                ( { wi | cnt = cnt }, world, WorldDone )
+
+            else
+                ( { wi | cnt = cnt }, world, Continue )
+
+
+playAll : List Sfx -> World -> World
+playAll sounds world =
+    List.foldl (\s w -> World.startSound Sound.Ambient s w) world sounds
+
+
+{-| WI\_checkForAccelerate: a fresh press of attack or use by anyone hurries things on.
+-}
+checkForAccelerate : Context -> World -> ( Bool, World )
+checkForAccelerate ctx world =
+    players ctx
+        |> List.foldl
+            (\i ( acc, w ) ->
+                case World.player i w of
+                    Just p ->
+                        let
+                            attack =
+                                Bitwise.and p.cmd.buttons Ticcmd.btAttack /= 0
+
+                            use =
+                                Bitwise.and p.cmd.buttons Ticcmd.btUse /= 0
+                        in
+                        ( acc || (attack && not p.attackdown) || (use && not p.usedown)
+                        , World.updatePlayer i (\q -> { q | attackdown = attack, usedown = use }) w
+                        )
+
+                    Nothing ->
+                        ( acc, w )
+            )
+            ( False, world )
+
+
+initNoState : Intermission -> Intermission
+initNoState wi =
+    { wi | stage = NoState, acceleratestage = False, cnt = 10 }
+
+
+initShowNextLoc : Intermission -> Intermission
+initShowNextLoc wi =
+    { wi | stage = ShowNextLoc, acceleratestage = False, cnt = 4 * Defs.ticrate }
+
+
+afterStats : Context -> Intermission -> Intermission
+afterStats ctx wi =
+    if ctx.gameMode == Commercial then
+        initNoState wi
+
+    else
+        initShowNextLoc wi
+
+
+pistolEvery4 : Intermission -> List Sfx
+pistolEvery4 wi =
+    if modBy 4 wi.bcnt == 0 then
+        [ Sfx.Pistol ]
+
+    else
+        []
+
+
+{-| The odd states pause a second before the next count starts.
+-}
+pause : Intermission -> Intermission
+pause wi =
+    if wi.cntPause - 1 == 0 then
+        { wi | statState = wi.statState + 1, cntPause = Defs.ticrate }
+
+    else
+        { wi | cntPause = wi.cntPause - 1 }
+
+
+{-| WI\_updateStats (single player).
+-}
+updateStats : Context -> Intermission -> ( Intermission, List Sfx )
+updateStats ctx wi0 =
+    let
+        wbs =
+            wi0.wbs
+
+        me =
+            plyr wbs.pnum wbs
+
+        kills =
+            percent me.skills wbs.maxkills
+
+        items =
+            percent me.sitems wbs.maxitems
+
+        secret =
+            percent me.ssecret wbs.maxsecret
+
+        time =
+            me.stime // Defs.ticrate
+
+        par =
+            wbs.partime // Defs.ticrate
+
+        ( wi, skipped ) =
+            if wi0.acceleratestage && wi0.statState /= 10 then
+                ( { wi0
+                    | acceleratestage = False
+                    , cntKills = Array.set 0 kills wi0.cntKills
+                    , cntItems = Array.set 0 items wi0.cntItems
+                    , cntSecret = Array.set 0 secret wi0.cntSecret
+                    , cntTime = time
+                    , cntPar = par
+                    , statState = 10
+                  }
+                , [ Sfx.Barexp ]
+                )
+
+            else
+                ( wi0, [] )
+
+        count field target w =
+            let
+                c =
+                    get 0 (field w) + 2
+            in
+            if c >= target then
+                ( target, True )
+
+            else
+                ( c, False )
+    in
+    Tuple.mapSecond ((++) skipped) <|
+        case wi.statState of
+            2 ->
+                let
+                    ( c, done ) =
+                        count .cntKills kills wi
+                in
+                ( { wi | cntKills = Array.set 0 c wi.cntKills } |> stepIf done, pistolEvery4 wi ++ barexpIf done )
+
+            4 ->
+                let
+                    ( c, done ) =
+                        count .cntItems items wi
+                in
+                ( { wi | cntItems = Array.set 0 c wi.cntItems } |> stepIf done, pistolEvery4 wi ++ barexpIf done )
+
+            6 ->
+                let
+                    ( c, done ) =
+                        count .cntSecret secret wi
+                in
+                ( { wi | cntSecret = Array.set 0 c wi.cntSecret } |> stepIf done, pistolEvery4 wi ++ barexpIf done )
+
+            8 ->
+                let
+                    t =
+                        min time (wi.cntTime + 3)
+
+                    p =
+                        wi.cntPar + 3
+
+                    done =
+                        p >= par && t >= time
+                in
+                ( { wi | cntTime = t, cntPar = min p par } |> stepIf done, pistolEvery4 wi ++ barexpIf done )
+
+            10 ->
+                if wi.acceleratestage then
+                    ( afterStats ctx wi, [ Sfx.Sgcock ] )
+
+                else
+                    ( wi, [] )
+
+            n ->
+                if modBy 2 n == 1 then
+                    ( pause wi, [] )
+
+                else
+                    ( wi, [] )
+
+
+stepIf : Bool -> Intermission -> Intermission
+stepIf done wi =
+    if done then
+        { wi | statState = wi.statState + 1 }
+
+    else
+        wi
+
+
+barexpIf : Bool -> List Sfx
+barexpIf done =
+    if done then
+        [ Sfx.Barexp ]
+
+    else
+        []
+
+
+{-| WI\_updateNetgameStats.
+-}
+updateNetgameStats : Context -> Intermission -> ( Intermission, List Sfx )
+updateNetgameStats ctx wi0 =
+    let
+        wbs =
+            wi0.wbs
+
+        inGame =
+            players ctx
+
+        target field i =
+            let
+                p =
+                    plyr i wbs
+            in
+            case field of
+                0 ->
+                    percent p.skills wbs.maxkills
+
+                1 ->
+                    percent p.sitems wbs.maxitems
+
+                2 ->
+                    percent p.ssecret wbs.maxsecret
+
+                _ ->
+                    fragSum ctx wbs i
+
+        setAll field values w =
+            case field of
+                0 ->
+                    { w | cntKills = values }
+
+                1 ->
+                    { w | cntItems = values }
+
+                2 ->
+                    { w | cntSecret = values }
+
+                _ ->
+                    { w | cntFrags = values }
+
+        current field w =
+            case field of
+                0 ->
+                    w.cntKills
+
+                1 ->
+                    w.cntItems
+
+                2 ->
+                    w.cntSecret
+
+                _ ->
+                    w.cntFrags
+
+        ( wi, skipped ) =
+            if wi0.acceleratestage && wi0.statState /= 10 then
+                ( List.foldl
+                    (\i w ->
+                        let
+                            set field ww =
+                                setAll field (Array.set i (target field i) (current field ww)) ww
+                        in
+                        w
+                            |> set 0
+                            |> set 1
+                            |> set 2
+                            |> (if w.dofrags /= 0 then
+                                    set 3
+
+                                else
+                                    identity
+                               )
+                    )
+                    { wi0 | acceleratestage = False, statState = 10 }
+                    inGame
+                , [ Sfx.Barexp ]
+                )
+
+            else
+                ( wi0, [] )
+
+        -- one counting step of a field for every player, by `step`
+        countUp field step finishSound advance =
+            let
+                ( values, stillticking ) =
+                    List.foldl
+                        (\i ( vs, ticking ) ->
+                            let
+                                c =
+                                    get i vs + step
+
+                                t =
+                                    target field i
+                            in
+                            if c >= t then
+                                ( Array.set i t vs, ticking )
+
+                            else
+                                ( Array.set i c vs, True )
+                        )
+                        ( current field wi, False )
+                        inGame
+
+                counted =
+                    setAll field values wi
+            in
+            if stillticking then
+                ( counted, pistolEvery4 wi )
+
+            else
+                ( { counted | statState = counted.statState + advance }, pistolEvery4 wi ++ [ finishSound ] )
+    in
+    Tuple.mapSecond ((++) skipped) <|
+        case wi.statState of
+            2 ->
+                countUp 0 2 Sfx.Barexp 1
+
+            4 ->
+                countUp 1 2 Sfx.Barexp 1
+
+            6 ->
+                countUp 2
+                    2
+                    Sfx.Barexp
+                    (if wi.dofrags /= 0 then
+                        1
+
+                     else
+                        3
+                    )
+
+            8 ->
+                countUp 3 1 Sfx.Pldeth 1
+
+            10 ->
+                if wi.acceleratestage then
+                    ( afterStats ctx wi, [ Sfx.Sgcock ] )
+
+                else
+                    ( wi, [] )
+
+            n ->
+                if modBy 2 n == 1 then
+                    ( pause wi, [] )
+
+                else
+                    ( wi, [] )
+
+
+{-| WI\_updateDeathmatchStats.
+-}
+updateDeathmatchStats : Context -> Intermission -> ( Intermission, List Sfx )
+updateDeathmatchStats ctx wi0 =
+    let
+        wbs =
+            wi0.wbs
+
+        inGame =
+            players ctx
+
+        frag i j =
+            get j (plyr i wbs).frags
+
+        dmFrag i j w =
+            Array.get i w.dmFrags |> Maybe.map (get j) |> Maybe.withDefault 0
+
+        setDmFrag i j v w =
+            { w | dmFrags = Array.set i (Array.set j v (Array.get i w.dmFrags |> Maybe.withDefault Array.empty)) w.dmFrags }
+
+        clamp99 =
+            clamp -99 99
+
+        ( wi, skipped ) =
+            if wi0.acceleratestage && wi0.statState /= 4 then
+                ( List.foldl
+                    (\i w ->
+                        List.foldl (\j ww -> setDmFrag i j (frag i j) ww) w inGame
+                            |> (\ww -> { ww | dmTotals = Array.set i (fragSum ctx wbs i) ww.dmTotals })
+                    )
+                    { wi0 | acceleratestage = False, statState = 4 }
+                    inGame
+                , [ Sfx.Barexp ]
+                )
+
+            else
+                ( wi0, [] )
+    in
+    Tuple.mapSecond ((++) skipped) <|
+        case wi.statState of
+            2 ->
+                let
+                    ( counted, stillticking ) =
+                        List.foldl
+                            (\i ( w, ticking ) ->
+                                let
+                                    ( w2, t2 ) =
+                                        List.foldl
+                                            (\j ( ww, tt ) ->
+                                                if dmFrag i j ww /= frag i j then
+                                                    let
+                                                        v =
+                                                            if frag i j < 0 then
+                                                                dmFrag i j ww - 1
+
+                                                            else
+                                                                dmFrag i j ww + 1
+                                                    in
+                                                    ( setDmFrag i j (clamp99 v) ww, True )
+
+                                                else
+                                                    ( ww, tt )
+                                            )
+                                            ( w, ticking )
+                                            inGame
+                                in
+                                ( { w2 | dmTotals = Array.set i (clamp99 (fragSum ctx wbs i)) w2.dmTotals }, t2 )
+                            )
+                            ( wi, False )
+                            inGame
+                in
+                if stillticking then
+                    ( counted, pistolEvery4 wi )
+
+                else
+                    ( { counted | statState = 3 }, pistolEvery4 wi ++ [ Sfx.Barexp ] )
+
+            4 ->
+                if wi.acceleratestage then
+                    ( afterStats ctx wi, [ Sfx.Slop ] )
+
+                else
+                    ( wi, [] )
+
+            n ->
+                if modBy 2 n == 1 then
+                    ( pause wi, [] )
+
+                else
+                    ( wi, [] )

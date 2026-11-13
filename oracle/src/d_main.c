@@ -3,8 +3,11 @@
 //  - -iwad <file> (IdentifyVersion), game mode taken from the WAD's maps
 //    (E4M1 -> retail, as Ultimate Doom/Freedoom Phase 1): only picks which
 //    WAD is loaded and the mode the original would have set for it.
-//  - D_DoomLoop is the original -singletics loop without display, sound or
-//    real-time calls: the same G_Ticker sequence, one tic per iteration.
+//  - D_DoomLoop: in -full mode the original loop verbatim (singletics
+//    set), plus hooks that post scripted events at the top of each
+//    iteration and count iterations. Otherwise (tic-hash mode) the original
+//    -singletics loop without display, sound or real-time calls: the same
+//    G_Ticker sequence, one tic per iteration.
 //  - statcopy cast through intptr_t (64-bit pointer size; never used).
 
 // Emacs style mode select   -*- C++ -*- 
@@ -360,8 +363,77 @@ void D_Display (void)
 //
 extern  boolean         demorecording;
 
+// DOOM-ORACLE: oracle_main.c
+extern boolean	oracle_full;
+void		Oracle_BeginIteration (void);
+void		Oracle_EndIteration (void);
+
 void D_DoomLoop (void)
 {
+    // DOOM-ORACLE: -full: the original loop, verbatim, with singletics set
+    // (oracle_main.c sets it), so each iteration runs exactly one tic. The
+    // only additions: Oracle_BeginIteration posts the scripted events of
+    // this iteration (-events) before I_StartFrame, Oracle_EndIteration
+    // counts iterations (-iterations). I_UpdateSound / I_SubmitSound are
+    // empty in the headless layer.
+    if (oracle_full)
+    {
+	if (demorecording)
+	    G_BeginRecording ();
+
+	if (M_CheckParm ("-debugfile"))
+	{
+	    char    filename[20];
+	    sprintf (filename,"debug%i.txt",consoleplayer);
+	    printf ("debug output to: %s\n",filename);
+	    debugfile = fopen (filename,"w");
+	}
+
+	I_InitGraphics ();
+
+	while (1)
+	{
+	    Oracle_BeginIteration ();	// DOOM-ORACLE
+
+	    // frame syncronous IO operations
+	    I_StartFrame ();
+
+	    // process one or more tics
+	    if (singletics)
+	    {
+		I_StartTic ();
+		D_ProcessEvents ();
+		G_BuildTiccmd (&netcmds[consoleplayer][maketic%BACKUPTICS]);
+		if (advancedemo)
+		    D_DoAdvanceDemo ();
+		M_Ticker ();
+		G_Ticker ();
+		gametic++;
+		maketic++;
+	    }
+	    else
+	    {
+		TryRunTics (); // will run at least one tic
+	    }
+
+	    S_UpdateSounds (players[consoleplayer].mo);// move positional sounds
+
+	    // Update display, next frame, with current state.
+	    D_Display ();
+
+#ifndef SNDSERV
+	    // Sound mixing for the buffer is snychronous.
+	    I_UpdateSound();
+#endif
+	    // Synchronous sound output is explicitly called.
+#ifndef SNDINTR
+	    // Update sound output.
+	    I_SubmitSound();
+#endif
+	    Oracle_EndIteration ();	// DOOM-ORACLE
+	}
+    }
+
     // DOOM-ORACLE: headless loop. Exactly the -singletics branch of the
     // original loop (one G_Ticker per iteration, ticdup 1, no net), minus
     // everything that only drives the display, sound and real time:

@@ -243,6 +243,19 @@ loadThings env things world =
                 loadThings env rest (Spawn.spawnMapThing env mt world)
 
 
+{-| `finesine[i]` read as the DOS executable reads it: `finetangent` (4096 entries)
+comes right before `finesine` in its memory, so a negative index from -4096 to -1
+lands in `finetangent`. `finecosine[i]` is `finesine[i + FINEANGLES/4]`.
+-}
+dosFineSine : Int -> Int
+dosFineSine i =
+    if i < 0 then
+        Tables.finetangent (Angle.fineangles // 2 + i)
+
+    else
+        Tables.finesine i
+
+
 doom2Monsters : List Int
 doom2Monsters =
     [ 68, 64, 88, 89, 69, 67, 71, 65, 66, 84 ]
@@ -253,6 +266,15 @@ doom2Monsters =
 Otherwise the player's old body must fit there (P\_CheckPosition); then that body goes
 on the body queue (removing the oldest if it is full) and teleport fog appears, with
 its sound unless this is the level's first tic.
+
+The fog's place is 20 units from the start in the direction it faces, worked out as
+`(ANG45 * (angle / 45)) >> ANGLETOFINESHIFT`. ANG45 is a signed int in the C source,
+so for starts facing 180, 225, 270 or 315 degrees the product overflows to a
+negative number and the shift keeps it negative: the original then reads
+`finecosine`/`finesine` before their start, which in the DOS executable's memory is
+the end of `finetangent` (Chocolate Doom and PrBoom+ emulate this the same way; see
+`dosFineSine`).
+
 -}
 checkSpot : Env -> Int -> MapThing -> ( BodyQue, World ) -> ( Bool, ( BodyQue, World ) )
 checkSpot env playernum mthing ( que, world ) =
@@ -311,15 +333,15 @@ checkSpot env playernum mthing ( que, world ) =
                         Geometry.pointInSubsector x y env.level
 
                     an =
-                        Angle.toFine (Angle.wrap (Int32.mul Angle.ang45 (mthing.angle // 45)))
+                        Int32.shiftRight Angle.angletofineshift (Int32.mul Angle.ang45 (mthing.angle // 45))
 
                     floorheight =
                         (World.sector (Level.subsector ss env.level).sector flushed).floorheight
 
                     ( fog, withFog ) =
                         PMobj.spawnMobj env
-                            (Int32.add x (Int32.mul 20 (Tables.finecosine an)))
-                            (Int32.add y (Int32.mul 20 (Tables.finesine an)))
+                            (Int32.add x (Int32.mul 20 (dosFineSine (an + Angle.fineangles // 4))))
+                            (Int32.add y (Int32.mul 20 (dosFineSine an)))
                             floorheight
                             MobjType.Tfog
                             flushed

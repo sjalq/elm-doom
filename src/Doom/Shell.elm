@@ -1089,20 +1089,23 @@ pendingActions ( m, acc ) =
                         else
                             description0
 
-                    bytes =
-                        Save.save description g
-
                     world =
                         World.updatePlayer g.params.consoleplayer (\p -> { p | message = Just "game saved." }) g.world
                 in
-                ( { m
-                    | savegame = Nothing
-                    , savedescription = ""
-                    , slots = Dict.insert slot bytes m.slots
-                    , game = { g | world = world }
-                  }
-                , { acc | saved = ( slot, bytes ) :: acc.saved }
-                )
+                case Save.save description g of
+                    Ok bytes ->
+                        ( { m
+                            | savegame = Nothing
+                            , savedescription = ""
+                            , slots = Dict.insert slot bytes m.slots
+                            , game = { g | world = world }
+                          }
+                        , { acc | saved = ( slot, bytes ) :: acc.saved }
+                        )
+
+                    Err _ ->
+                        -- "Savegame buffer overrun" (the original quits): go on unsaved
+                        ( { m | savegame = Nothing, savedescription = "" }, acc )
 
             ( Nothing, Just slot ) ->
                 let

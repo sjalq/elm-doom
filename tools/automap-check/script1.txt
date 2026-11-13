@@ -1,0 +1,99 @@
+5 down 9
+6 up 9
+10 dump
+12 map
+12 dump
+20 down 103
+21 up 103
+25 dump
+30 down 61
+50 up 61
+40 dump
+50 dump
+60 dump
+70 down 109
+71 up 109
+72 dump
+80 down 102
+81 down 174
+100 up 174
+90 dump
+100 dump
+101 down 175
+130 up 175
+130 dump
+110 down 45
+200 up 45
+150 dump
+200 dump
+205 down 109
+206 down 109
+207 dump
+210 down 48
+211 dump
+220 down 105
+220 down 100
+221 down 100
+221 down 116
+222 dump
+230 down 105
+230 down 100
+230 down 100
+230 down 116
+232 dump
+240 allmap 1
+240 down 105
+240 down 100
+240 down 100
+240 down 116
+242 dump
+250 down 48
+251 dump
+252 down 172
+260 up 172
+260 dump
+261 down 102
+270 dump
+280 down 61
+330 up 61
+300 dump
+330 dump
+340 down 9
+341 dump
+350 down 9
+351 dump
+360 down 105
+360 down 100
+360 down 100
+360 down 116
+360 down 105
+360 down 100
+360 down 100
+360 down 116
+400 dump
+500 dump
+600 dump
+700 dump
+800 dump
+900 dump
+1000 dump
+1100 dump
+1200 dump
+1300 dump
+1400 dump
+1500 dump
+1600 dump
+1700 dump
+1800 dump
+1900 dump
+2000 dump
+2100 dump
+2200 dump
+2300 dump
+2400 dump
+2500 dump
+2600 dump
+2700 dump
+2800 dump
+2900 dump
+3000 dump

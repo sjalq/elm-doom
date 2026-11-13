@@ -16,7 +16,7 @@ demo replaces them with its own):
         |> Tuple.first
         |> Game.playing
 
-Not translated: saving and loading games (a save request is ignored), the menus, the
+Not translated here: saving and loading games (`Doom.Save` does them; a save request in a ticcmd is ignored), the menus, the
 status bar, automap and chat tickers (they don't change the game), the demo loop and
 title pages (a demo that ends leaves the game on `DemoScreen`, as `-playdemo` quits),
 and the finale's text and cast (the finale counts its tics and, in Doom II, moves on

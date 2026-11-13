@@ -1,3 +1,7 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - ORACLE_LUMPPAD: zero bytes allocated past every cached lump.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -61,6 +65,16 @@ typedef struct
     int		size;
 } lumpinfo_t;
 
+
+// DOOM-ORACLE: R_DrawColumn indexes a column with (frac>>FRACBITS)&127,
+// so a sprite post or a texture column shorter than 128 can be read up to
+// 127 bytes past its end, i.e. past the end of the lump (or composite
+// texture) holding it. The original then reads whatever the heap holds
+// next (another zone block, its header): those pixels depend on memory
+// layout. The oracle gives every cached lump and composite texture this
+// many zero bytes past its end, so such reads see 0, which a port can
+// reproduce: bytes past the end of a lump read as 0.
+#define ORACLE_LUMPPAD	256
 
 extern	void**		lumpcache;
 extern	lumpinfo_t*	lumpinfo;

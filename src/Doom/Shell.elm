@@ -708,9 +708,13 @@ gResponder ev ( m, acc ) =
                 levelResponders env ev ( m, acc )
 
             ( Finale finale, _ ) ->
-                case Finale.responder ev finale of
-                    Just ( finale2, sounds ) ->
-                        List.foldl (ambientSound g.world.gametic) ( { m | game = { g | state = Finale finale2 } }, acc ) sounds
+                case Finale.responder ev g.world.rng finale of
+                    Just ( finale2, sounds, rng ) ->
+                        let
+                            world =
+                                g.world
+                        in
+                        List.foldl (ambientSound g.world.gametic) ( { m | game = { g | state = Finale finale2, world = { world | rng = rng } } }, acc ) sounds
 
                     Nothing ->
                         gameKeys ev ( m, acc )

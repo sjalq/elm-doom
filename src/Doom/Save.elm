@@ -6,7 +6,7 @@ linuxdoom-1.10 writes, laid out as the original 32-bit x86 program laid it out.
 A save file is:
 
   - the description, 24 bytes (SAVESTRINGSIZE);
-  - the version string, "version 110" padded with zeros to 16 bytes;
+  - the version string, "version 109" padded with zeros to 16 bytes;
   - skill, episode and map, one byte each, then a byte for each of the four players
     saying whether they are in the game;
   - `leveltime` in three bytes, most significant first;
@@ -90,12 +90,13 @@ import Doom.World as World exposing (World)
 -- CONSTANTS
 
 
-{-| The version string a save starts with after its description, "version 110"
-(`sprintf (name2, "version %i", VERSION)`). Loading refuses any other.
+{-| The version string a save starts with after its description, "version 109"
+(`sprintf (name2, "version %i", VERSION)`; VERSION is 109 in the DOS v1.9
+executable, 110 in linuxdoom-1.10). Loading refuses any other.
 -}
 version : String
 version =
-    "version 110"
+    "version 109"
 
 
 saveStringSize : Int
@@ -700,7 +701,7 @@ writeFloor : Thinker.FloorMove -> Out -> Out
 writeFloor f =
     thinkerHead True
         >> i32 (indexIn floorTypes f.type_)
-        >> i32 (boolInt f.crush)
+        >> i32 (floorCrush f)
         >> i32 f.sector
         >> i32 f.direction
         >> i32 f.newspecial
@@ -708,6 +709,27 @@ writeFloor f =
         >> zeros 2
         >> i32 f.floordestheight
         >> i32 f.speed
+
+
+{-| A floor's `crush` as the DOS executable has it in memory. A stair step (the only
+floor of type LowerFloor that goes up) never has `crush` set by EV\_BuildStairs, and
+there it holds 10 (see `Doom.Play.Plane.StairCrush`). Loaded back, any nonzero value
+is True; a step is still told apart by its type and direction.
+-}
+floorCrush : Thinker.FloorMove -> Int
+floorCrush f =
+    if f.type_ == Thinker.LowerFloor && f.direction == 1 then
+        stairCrush
+
+    else
+        boolInt f.crush
+
+
+{-| chocolate-doom's STAIRS\_UNINITIALIZED\_CRUSH\_FIELD\_VALUE.
+-}
+stairCrush : Int
+stairCrush =
+    10
 
 
 writePlat : Thinker.Plat -> Out -> Out

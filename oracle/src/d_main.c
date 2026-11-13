@@ -1098,6 +1098,20 @@ void D_DoomMain (void)
 	fprintf (stderr, "doom-oracle: game mode %d\n", gamemode);
     }
 
+    // DOOM-ORACLE: DOS behaviour: D_DoomMain reads -warp knowing the game mode
+    // (IdentifyVersion found it first); with -iwad it was only known just now,
+    // so Doom II's -warp MAP is read again here.
+    if (gamemode == commercial)
+    {
+	int wp = M_CheckParm ("-warp");
+	int ep = M_CheckParm ("-episode");
+	if (wp && wp < myargc-1)
+	{
+	    startmap = atoi (myargv[wp+1]);
+	    startepisode = (ep && ep < myargc-1) ? myargv[ep+1][0]-'0' : 1;
+	}
+    }
+
     
 
     // Check for -file in shareware

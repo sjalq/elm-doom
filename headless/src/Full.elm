@@ -56,6 +56,7 @@ type alias Args =
     , framesTo : Int
     , events : Maybe String
     , savedir : Maybe String
+    , warp : Maybe ( String, String )
     , soundlog : Maybe String
     , iterations : Maybe Int
     , playdemo : Maybe String
@@ -125,17 +126,18 @@ parse args a =
         "-episode" :: n :: rest ->
             int "-episode" (String.left 1 n) (\v -> parse rest { a | options = { o | episode = Just v } })
 
-        "-warp" :: e :: m :: rest ->
-            case ( String.toInt (String.left 1 e), String.toInt (String.left 1 m) ) of
-                ( Just ev, Just mv ) ->
-                    parse rest { a | options = { o | warp = Just ( ev, mv ) } }
+        "-warp" :: e :: rest ->
+            -- read as D_DoomMain reads it once the game mode is known (see `warp`)
+            case rest of
+                m :: more ->
+                    if String.startsWith "-" m then
+                        parse rest { a | warp = Just ( e, m ) }
 
-                _ ->
-                    -- Doom II's -warp MAP: one number
-                    int "-warp" e (\v -> parse (m :: rest) { a | options = { o | warp = Just ( 1, v ) } })
+                    else
+                        parse more { a | warp = Just ( e, m ) }
 
-        "-warp" :: m :: rest ->
-            int "-warp" m (\v -> parse rest { a | options = { o | warp = Just ( 1, v ) } })
+                [] ->
+                    parse [] { a | warp = Just ( e, "" ) }
 
         "-playdemo" :: name :: rest ->
             parse rest { a | playdemo = Just name }
@@ -288,6 +290,7 @@ run env args =
             , framesTo = 0x7FFFFFFF
             , events = Nothing
             , savedir = Just "."
+            , warp = Nothing
             , soundlog = Nothing
             , iterations = Nothing
             , playdemo = Nothing
@@ -347,6 +350,9 @@ run env args =
                                                             Shell.init { options | playdemo = demo, quitToTitle = False, savedGames = slots } wad data
 
                                                         options =
+                                                            { o | warp = Maybe.map (warp data.gameMode) a.warp }
+
+                                                        o =
                                                             a.options
                                                     in
                                                     startFrames a
@@ -591,3 +597,38 @@ appendSoundLog a lines =
 
         _ ->
             Task.succeed ()
+
+
+{-| D\_DoomMain's -warp: Doom II's map number (`atoi`); otherwise the first characters
+of the next two arguments as the episode and the map (whatever they are: a missing
+or non-digit map makes a map below 1, which G\_InitNew turns into 1).
+-}
+warp : Defs.GameMode -> ( String, String ) -> ( Int, Int )
+warp mode ( first, second ) =
+    let
+        digit str =
+            case String.uncons str of
+                Just ( c, _ ) ->
+                    Char.toCode c - Char.toCode '0'
+
+                Nothing ->
+                    -1 - Char.toCode '0'
+
+        atoi str =
+            String.toList str
+                |> List.foldl
+                    (\c ( n, going ) ->
+                        if going && Char.isDigit c then
+                            ( n * 10 + Char.toCode c - Char.toCode '0', True )
+
+                        else
+                            ( n, False )
+                    )
+                    ( 0, True )
+                |> Tuple.first
+    in
+    if mode == Defs.Commercial then
+        ( 1, atoi first )
+
+    else
+        ( digit first, digit second )

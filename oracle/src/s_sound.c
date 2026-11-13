@@ -4,6 +4,8 @@
 //    I_StartSound / I_UpdateSoundParams / I_StopSound call, so the
 //    headless i_sound layer (i_headless.c) can log it (-soundlog).
 //  - S_SetSfxVolume logs its value (-soundlog); it calls no I_ function.
+//  - A switch's sound origin is read as the 32-bit original reads it
+//    (S_OriginXY, below).
 // DOOM-ORACLE: DOS behaviour (DOS v1.9, where linuxdoom differs):
 //  - S_CLOSE_DIST is 200 units (S_ATTENUATOR 1000), not 160 (1040).
 //  - S_StopChannel also forgets the channel's origin.
@@ -41,6 +43,7 @@ rcsid[] = "$Id: s_sound.c,v 1.6 1997/02/03 22:45:12 b1 Exp $";
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>	// DOOM-ORACLE: offsetof
 
 #include "i_system.h"
 #include "i_sound.h"
@@ -147,6 +150,31 @@ static int		nextcleanup;
 // DOOM-ORACLE: channel of the next I_StartSound/I_UpdateSoundParams/
 // I_StopSound call, read by the -soundlog logger in i_headless.c.
 int			oracle_snd_channel = -1;
+
+// DOOM-ORACLE: P_UpdateSpecials starts the switch sound with
+// S_StartSound ((mobj_t *)&buttonlist[i].soundorg, sfx_swtchn): the
+// address of the soundorg field, not the mobj it holds, so s_sound.c
+// reads a mobj_t laid over buttonlist. In the 32-bit original (thinker_t
+// 12 bytes, button_t 20: line 0, where 4, btexture 8, btimer 12,
+// soundorg 16) that mobj's x (offset 12) is buttonlist[i+1].btexture and
+// its y (offset 16) buttonlist[i+1].btimer, read afresh at every use.
+// On a 64-bit host the layout differs, so the positions are computed
+// here as the original's. For the last slot (i+1 == MAXBUTTONS) the
+// original reads past the array, memory no port can know: 0 is used.
+static void S_OriginXY (mobj_t* o, fixed_t* x, fixed_t* y)
+{
+    byte*	b = (byte *) o;
+
+    if (b >= (byte *) &buttonlist[0] && b < (byte *) &buttonlist[MAXBUTTONS])
+    {
+	int i = (int) (((button_t *) (b - offsetof (button_t, soundorg))) - buttonlist);
+	*x = i + 1 < MAXBUTTONS ? buttonlist[i+1].btexture : 0;
+	*y = i + 1 < MAXBUTTONS ? buttonlist[i+1].btimer : 0;
+	return;
+    }
+    *x = o->x;
+    *y = o->y;
+}
 void			Oracle_SoundLogSfxVolume (int volume);
 
 
@@ -328,8 +356,10 @@ S_StartSoundAtVolume
 			     &sep,
 			     &pitch);
 	
-    if ( origin->x == players[consoleplayer].mo->x
-	 && origin->y == players[consoleplayer].mo->y)
+    fixed_t ox, oy;	// DOOM-ORACLE: S_OriginXY
+    S_OriginXY (origin, &ox, &oy);
+    if ( ox == players[consoleplayer].mo->x
+	 && oy == players[consoleplayer].mo->y)
     {	
       sep 	= NORM_SEP;
     }
@@ -791,11 +821,14 @@ S_AdjustSoundParams
     fixed_t	adx;
     fixed_t	ady;
     angle_t	angle;
+    fixed_t	sx, sy;
+
+    S_OriginXY (source, &sx, &sy);	// DOOM-ORACLE: was source->x, source->y
 
     // calculate the distance to sound origin
     //  and clip it if necessary
-    adx = abs(listener->x - source->x);
-    ady = abs(listener->y - source->y);
+    adx = abs(listener->x - sx);
+    ady = abs(listener->y - sy);
 
     // From _GG1_ p.428. Appox. eucledian distance fast.
     approx_dist = adx + ady - ((adx < ady ? adx : ady)>>1);
@@ -809,8 +842,8 @@ S_AdjustSoundParams
     // angle of source to listener
     angle = R_PointToAngle2(listener->x,
 			    listener->y,
-			    source->x,
-			    source->y);
+			    sx,
+			    sy);
 
     if (angle > listener->angle)
 	angle = angle - listener->angle;

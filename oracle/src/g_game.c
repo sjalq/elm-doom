@@ -1,5 +1,12 @@
 // DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
 // for DOOM-ORACLE below). None of them changes how the game plays:
+//  - G_CheckSpot: the teleport fog's offset for starts facing 180..315
+//    degrees reads finetangent[] as the DOS executable does (vanilla reads
+//    out of bounds there; the 64-bit build would crash).
+//  - G_DoSaveGame: a 1 MB buffer of its own and that as the limit (the
+//    64-bit layout is bigger than the 32-bit one SAVEGAMESIZE is for).
+//  - G_Ticker calls Oracle_SaveCheck first (does nothing without
+//    -savecheck; see oracle_savecheck.c).
 //  - G_DoPlayDemo: accepts demo version 109 (same format as 110) and a demo
 //    already in memory (oracle_demodata: a demo file or ticcmd stream);
 //    a wrong version is an error instead of a silent hang.
@@ -82,6 +89,7 @@ rcsid[] = "$Id: g_game.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 // DOOM-ORACLE: oracle_main.c
 extern byte*	oracle_demodata;
 void		Oracle_LevelTic (void);
+void		Oracle_SaveCheck (void);	// oracle_savecheck.c
 
 #define SAVEGAMESIZE	0x2c000
 #define SAVESTRINGSIZE	24
@@ -620,6 +628,9 @@ void G_Ticker (void)
     int		buf; 
     ticcmd_t*	cmd;
     
+    // DOOM-ORACLE: -savecheck saves and loads the game here, once.
+    Oracle_SaveCheck ();
+
     // do player reborns if needed
     for (i=0 ; i<MAXPLAYERS ; i++) 
 	if (playeringame[i] && players[i].playerstate == PST_REBORN) 
@@ -896,9 +907,21 @@ G_CheckSpot
     ss = R_PointInSubsector (x,y); 
     an = ( ANG45 * (mthing->angle/45) ) >> ANGLETOFINESHIFT; 
  
-    mo = P_SpawnMobj (x+20*finecosine[an], y+20*finesine[an] 
-		      , ss->sector->floorheight 
-		      , MT_TFOG); 
+    // DOOM-ORACLE: ANG45 is a signed int, so for starts facing 180..315
+    // degrees the product overflows and `an` is -4096..-1024 (as unsigned).
+    // The 32-bit DOS executable then reads finecosine/finesine before their
+    // start, which in its memory is the end of finetangent[] (4096 entries,
+    // right before finesine[]); on 64-bit the same index reads 16 GB away and
+    // crashes. Reproduce the DOS read (as Chocolate Doom and PrBoom+ do).
+    {
+	int	ci = (int) an + FINEANGLES/4;
+	int	si = (int) an;
+	fixed_t	xa = ci < 0 ? finetangent[FINEANGLES/2 + ci] : finesine[ci];
+	fixed_t	ya = si < 0 ? finetangent[FINEANGLES/2 + si] : finesine[si];
+	mo = P_SpawnMobj (x+20*xa, y+20*ya
+			  , ss->sector->floorheight 
+			  , MT_TFOG); 
+    }
 	 
     if (players[consoleplayer].viewz != 1) 
 	S_StartSound (mo, sfx_telept);	// don't start sound on first frame 
@@ -1299,7 +1322,15 @@ void G_DoSaveGame (void)
 	sprintf (name,SAVEGAMENAME"%d.dsg",savegameslot); 
     description = savedescription; 
 	 
-    save_p = savebuffer = screens[1]+0x4000; 
+    // DOOM-ORACLE: a buffer of its own, big enough for the 64-bit layout
+    // (the original's screens[1]+0x4000 holds SAVEGAMESIZE bytes of the 32-bit
+    // one).
+    {
+	static byte* oracle_savebuffer;
+	if (!oracle_savebuffer)
+	    oracle_savebuffer = malloc (0x100000);
+	save_p = savebuffer = oracle_savebuffer;
+    }
 	 
     memcpy (save_p, description, SAVESTRINGSIZE); 
     save_p += SAVESTRINGSIZE; 
@@ -1325,7 +1356,9 @@ void G_DoSaveGame (void)
     *save_p++ = 0x1d;		// consistancy marker 
 	 
     length = save_p - savebuffer; 
-    if (length > SAVEGAMESIZE) 
+    // DOOM-ORACLE: SAVEGAMESIZE is the limit for the 32-bit layout, which
+    // this 64-bit file is bigger than; doom/src/Doom/Save.elm checks it.
+    if (length > 0x100000) 
 	I_Error ("Savegame buffer overrun"); 
     M_WriteFile (name, savebuffer, length); 
     gameaction = ga_nothing; 

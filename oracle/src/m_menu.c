@@ -1,5 +1,5 @@
 // DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
-// for DOOM-ORACLE below). None of them changes how the game plays:
+// for DOOM-ORACLE below):
 //  - Sound volumes as in DOS v1.9: the menu works on sfxVolume /
 //    musicVolume (0..15) and hands S_SetSfxVolume / S_SetMusicVolume
 //    8 times that; linuxdoom had commented out the * 8 and used

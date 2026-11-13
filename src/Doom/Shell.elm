@@ -952,7 +952,8 @@ gTicker cmd ( m0, acc0 ) =
             pendingActions ( m0, acc0 )
 
         before =
-            m.game
+            -- P_Ticker reads menuactive (the game stands still under the menu)
+            m.game |> (\g -> { g | menuactive = Menu.active m.menu })
 
         console =
             before.params.consoleplayer

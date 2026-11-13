@@ -69,6 +69,7 @@ type alias Game =
     , fastparm : Bool
     , demoplayback : Bool
     , singledemo : Bool
+    , menuactive : Bool
     , netdemo : Bool
     , state : GameState
     , action : GameAction
@@ -139,6 +140,7 @@ new wad data action =
     , fastparm = False
     , demoplayback = False
     , singledemo = True
+    , menuactive = False
     , netdemo = False
     , state = DemoScreen
     , action = action
@@ -414,13 +416,26 @@ specialButtons game =
         playerIndexes
 
 
+{-| P\_Ticker's "pause if in menu and at least one tic has been run": the menu is up
+(`menuactive`, which the game shell keeps up to date), in a single-player game that
+isn't a demo, and the console player's view height isn't the 1 that P\_SpawnPlayer's
+mobj starts with before its first tic.
+-}
+menuPause : Game -> Bool
+menuPause game =
+    not game.params.netgame
+        && game.menuactive
+        && not game.demoplayback
+        && (World.player game.params.consoleplayer game.world |> Maybe.map (\p -> p.viewz /= 1) |> Maybe.withDefault True)
+
+
 mainAction : Game -> ( Game, Bool )
 mainAction game =
     case game.state of
         Level ->
             case game.env of
                 Just env ->
-                    if game.paused then
+                    if game.paused || menuPause game then
                         ( game, False )
 
                     else

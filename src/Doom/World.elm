@@ -22,6 +22,7 @@ the same way as there.
 # The world
 
 @docs World, SectorState, LineState, SideState, Button, ButtonWhere, ItemRespawn, Exit
+@docs BlockmapHeader
 @docs Scratch, Divline, emptyScratch, maxButtons, itemQueSize
 
 

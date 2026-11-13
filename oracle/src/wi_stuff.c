@@ -24,6 +24,11 @@
 static const char
 rcsid[] = "$Id: wi_stuff.c,v 1.7 1997/02/03 22:45:13 b1 Exp $";
 
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below): two Linux-only bugs fixed to DOS v1.9 behaviour,
+// WI_drawAnimatedBack's "if (commercial)" and WI_loadData's
+// "if (french)". Neither changes play: drawing and a picture choice only.
+
 #include <stdio.h>
 
 #include "z_zone.h"
@@ -585,7 +590,10 @@ void WI_drawAnimatedBack(void)
     int			i;
     anim_t*		a;
 
-    if (commercial)
+    // DOOM-ORACLE: DOS behaviour. linuxdoom-1.10 tests the enum constant
+    // ("if (commercial)", always true), so it never draws the episode
+    // maps' animations; DOS Doom v1.9 draws them.
+    if (gamemode == commercial)
 	return;
 
     if (wbs->epsd > 2)
@@ -1652,7 +1660,10 @@ void WI_loadData(void)
     sp_secret = W_CacheLumpName("WISCRT2", PU_STATIC);
 
     // Yuck. 
-    if (french)
+    // DOOM-ORACLE: DOS behaviour. linuxdoom-1.10 tests the enum constant
+    // ("if (french)", always true), so a co-op intermission wants WIOBJ,
+    // which no IWAD has (I_Error); DOS Doom v1.9 shows WIOSTI.
+    if (language == french)
     {
 	// "items"
 	if (netgame && !deathmatch)

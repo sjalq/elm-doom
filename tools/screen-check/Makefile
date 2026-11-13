@@ -6,8 +6,8 @@
 #   make check WAD=..    run every scenario in check.py on both, compare
 #
 # The game sources are doom/oracle/src (linuxdoom-1.10 with the oracle's
-# platform changes), minus its driver; its stubbed S_StartSound,
-# S_ChangeMusic and S_StartMusic are renamed away so the harness can log them.
+# platform changes), minus its driver and s_sound.c, which the harness replaces
+# with stubs that log the sounds and music asked for.
 
 CC     ?= clang
 ECO    ?= eco
@@ -16,8 +16,8 @@ SRC     = $(ORACLE)/src
 DFLAGS  = -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -ffp-contract=off \
           -DNORMALUNIX -w -O1 -Wno-implicit-int -Wno-incompatible-function-pointer-types \
           -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-type
-SRCS    = $(filter-out $(SRC)/oracle_main.c $(SRC)/i_headless.c,$(wildcard $(SRC)/*.c))
-OBJS    = $(patsubst $(SRC)/%.c,build/%.o,$(SRCS)) build/i_headless.o build/harness.o
+SRCS    = $(filter-out $(SRC)/oracle_main.c $(SRC)/s_sound.c,$(wildcard $(SRC)/*.c))
+OBJS    = $(patsubst $(SRC)/%.c,build/%.o,$(SRCS)) build/harness.o
 WAD    ?= ../../headless/freedoom1.wad
 WAD2   ?= freedoom2.wad
 
@@ -28,10 +28,6 @@ harness: $(OBJS)
 
 build/%.o: $(SRC)/%.c | build
 	$(CC) $(DFLAGS) -c $< -o $@
-
-build/i_headless.o: $(SRC)/i_headless.c | build
-	$(CC) $(DFLAGS) -DS_StartSound=S_StartSound_stub -DS_ChangeMusic=S_ChangeMusic_stub \
-	  -DS_StartMusic=S_StartMusic_stub -c $< -o $@
 
 build/harness.o: harness.c | build
 	$(CC) $(DFLAGS) -I$(SRC) -c $< -o $@

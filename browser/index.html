@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doom</title>
+<link rel="stylesheet" href="page.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<main>
+  <canvas id="screen" width="320" height="200"></canvas>
+  <p id="help">Loading freedoom1.wad&hellip; (or drop your own IWAD here)</p>
+</main>
+<script src="elm.js"></script>
+<script type="module">
+  import { fetchWad, onDrop, run, stored } from './host.js';
+  const canvas = document.getElementById('screen');
+  const help = document.getElementById('help');
+  let started = false;
+  const start = (buffer) => {
+    if (started) return;
+    started = true;
+    const app = Elm.Main.init({ node: document.createElement('div'), flags: stored() });
+    run(app, canvas, buffer, (s) => { help.textContent = s; });
+    canvas.focus();
+  };
+  onDrop(document.body, start);
+  fetchWad('freedoom1.wad')
+    .then(start)
+    .catch((e) => { help.textContent = e.message + ': drop a WAD file here'; });
+</script>
+</body>
+</html>

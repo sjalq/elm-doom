@@ -1,0 +1,55 @@
+3 down 9
+4 map
+4 down 103
+5 down 105
+5 down 100
+5 down 100
+5 down 116
+6 down 61
+10 dump
+50 dump
+100 dump
+200 dump
+205 up 61
+210 dump
+220 down 109
+221 down 102
+222 down 173
+260 dump
+300 dump
+301 up 173
+302 down 172
+340 dump
+380 dump
+381 up 172
+382 down 45
+390 dump
+400 dump
+420 dump
+440 dump
+460 dump
+470 up 45
+471 down 175
+490 dump
+520 dump
+521 up 175
+522 down 174
+523 down 173
+560 dump
+600 dump
+601 up 174
+602 up 173
+603 down 48
+604 dump
+610 down 48
+611 dump
+612 down 102
+613 dump
+620 down 61
+640 up 61
+641 dump
+700 dump
+900 dump
+1100 dump
+1300 dump
+1500 dump

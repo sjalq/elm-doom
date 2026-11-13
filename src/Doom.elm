@@ -1,39 +1,63 @@
 module Doom exposing
-    ( Model, init, Start(..), start, fromWad
-    , Msg(..), Key(..), update, msPerTic
+    ( Model, init, Options, defaultOptions, start
+    , Msg(..), update, msPerTic, maxCatchUp
+    , view, settings, savedGames, finished
     , game, wad, playing, state, error
     )
 
-{-| Doom (linuxdoom-1.10) as an Elm program: give it a WAD's bytes, feed it time and
-key presses, and read the game back out to draw it and play its sounds.
+{-| Doom (linuxdoom-1.10) as an Elm program, frame for frame the original: give it a
+WAD's bytes, feed it time and the player's keys and mouse, and show the screen it
+gives back and play the sounds it asks for.
 
     import Doom
+    import Doom.Event as Event
 
     type alias Model =
         Result String Doom.Model
 
-    init : Bytes -> Model
+    init : Bytes -> ( Model, List Doom.Audio.Command )
     init wadBytes =
-        Doom.init wadBytes
+        case Doom.init wadBytes of
+            Ok ( doom, sounds ) ->
+                ( Ok doom, sounds )
 
-    -- in update, with Browser.Events.onAnimationFrameDelta Frame:
-    --     Frame ms -> Doom.update (Doom.Tick ms) doom
-    --     KeyPressed k -> Doom.update (Doom.KeyDown k) doom
-    -- update gives back the new model and the sounds to play.
+            Err problem ->
+                ( Err problem, [] )
 
-The game runs at 35 tics a second, whatever the frame rate: `Tick` adds up the time
-that has passed and runs a tic for every 1/35 of a second, catching up at most
-`maxCatchUp` tics at once (after a long pause the game doesn't race ahead).
+    -- with Browser.Events.onAnimationFrameDelta Frame, onKeyDown, onKeyUp:
+    --     Frame ms ->    Doom.update (Doom.Tick ms) doom
+    --     KeyDown code -> Doom.update (Doom.Event (Event.KeyDown code)) doom
+    --     KeyUp code ->   Doom.update (Doom.Event (Event.KeyUp code)) doom
+    --     MouseMoved buttons dx dy -> Doom.update (Doom.Event (Event.Mouse buttons dx dy)) doom
+    -- then draw `Doom.view doom` (palette indices, the palette and the gamma level),
+    -- play the `Doom.Audio.Command`s update gave back, and keep `Doom.savedGames doom`
+    -- and `Doom.settings doom` for next time (hand them back in `start`'s options).
+
+The game loop runs at 35 passes a second, whatever the frame rate: `Tick` adds up
+the time that has passed and runs a pass of the original's D\_DoomLoop for every
+1/35 of a second (at most `maxCatchUp` at once: after a long pause the game doesn't
+race ahead). Each pass shows one frame. While the screen melts from one game state
+to the next, each 1/35 of a second shows the melt's next frame instead (the original
+spends its D\_Display wipe loop's frames the same way), and events wait for the
+next pass. The same events at the same passes give the same frames.
+
+The menu's Quit goes back to the title (a page can't exit); `Options.quitToTitle`
+False makes it end the game (`finished`) as I\_Quit does.
 
 
 # Starting
 
-@docs Model, init, Start, start, fromWad
+@docs Model, init, Options, defaultOptions, start
 
 
 # Running
 
-@docs Msg, Key, update, msPerTic
+@docs Msg, update, msPerTic, maxCatchUp
+
+
+# Showing it
+
+@docs view, settings, savedGames, finished
 
 
 # Reading the game
@@ -42,126 +66,88 @@ that has passed and runs a tic for every 1/35 of a second, catching up at most
 
 -}
 
-import Array
 import Bytes exposing (Bytes)
-import Doom.Data exposing (Data)
+import Dict exposing (Dict)
+import Doom.Audio exposing (Command)
 import Doom.Data.Load as DataLoad
-import Doom.Defs exposing (Skill(..))
-import Doom.Demo as Demo
+import Doom.Event exposing (Event)
 import Doom.Game as Game exposing (Game, GameState)
-import Doom.Input as Input exposing (Input)
+import Doom.Menu exposing (Settings)
 import Doom.Play.Env exposing (Env)
-import Doom.Sound as Sound
-import Doom.Ticcmd as Ticcmd exposing (Ticcmd)
+import Doom.Screen exposing (Screen)
+import Doom.Shell as Shell exposing (Shell)
 import Doom.Wad as Wad exposing (Wad)
 import Doom.World exposing (World)
 
 
-{-| A running game and the controls being held.
+{-| The running program, the events waiting for the next pass, and the time that
+hasn't made a whole tic yet.
 -}
 type Model
     = Model
-        { game : Game
-        , held : List Key
-        , mouseX : Int
-        , turnheld : Input.Turning
-        , sendpause : Bool
+        { shell : Shell
+        , events : List Event
         , pendingMs : Float
         }
 
 
-{-| What to start with: a new game at a skill, episode and map, or a demo (the name
-of a demo lump in the WAD, such as "DEMO1").
+{-| How to start (D\_DoomMain's command line, the configuration, the saved games):
+see `Doom.Shell.Options`.
 -}
-type Start
-    = NewGame Skill Int Int
-    | Demo String
+type alias Options =
+    Shell.Options
 
 
-{-| A new game on Medium ("Hurt me plenty"), at the first map (E1M1, or MAP01 in
-Doom II).
+{-| The title and demo loop, with m\_misc.c's default settings and key bindings.
 -}
-init : Bytes -> Result String Model
+defaultOptions : Options
+defaultOptions =
+    Shell.defaultOptions
+
+
+{-| Start the WAD's game at the title, as the original does with no options. Gives
+the first sound commands (the volumes, the title music comes with the first pass).
+-}
+init : Bytes -> Result String ( Model, List Command )
 init =
-    start (NewGame Medium 1 1)
+    start defaultOptions
 
 
-{-| Start the WAD's game some other way:
+{-| Start some other way:
 
-    Doom.start (Doom.Demo "DEMO1") wadBytes
-
-    Doom.start (Doom.NewGame Defs.Hard 2 3) wadBytes
+    Doom.start { defaultOptions | warp = Just ( 1, 3 ), skill = Just Defs.Hard } wadBytes
 
 -}
-start : Start -> Bytes -> Result String Model
-start what bytes =
+start : Options -> Bytes -> Result String ( Model, List Command )
+start options bytes =
     Wad.fromBytes bytes
-        |> Result.andThen (\w -> DataLoad.fromWad w |> Result.andThen (fromWad what w))
-
-
-{-| Start a game from a WAD already read, and its data.
--}
-fromWad : Start -> Wad -> Data -> Result String Model
-fromWad what w data =
-    let
-        action =
-            case what of
-                NewGame skill episode map ->
-                    Ok (Game.newGame skill episode map)
-
-                Demo name ->
-                    case Wad.lump name w of
-                        Just bytes ->
-                            Demo.fromBytes bytes |> Result.map Game.playDemo
-
-                        Nothing ->
-                            Err ("the WAD has no demo " ++ name)
-    in
-    action
-        |> Result.map
-            (\a ->
-                Model
-                    { game = Game.new w data a
-                    , held = []
-                    , mouseX = 0
-                    , turnheld = Input.notTurning
-                    , sendpause = False
-                    , pendingMs = 0
-                    }
+        |> Result.andThen
+            (\w ->
+                DataLoad.fromWad w
+                    |> Result.map
+                        (\data ->
+                            let
+                                ( shell, out ) =
+                                    Shell.init options w data
+                            in
+                            ( Model { shell = shell, events = [], pendingMs = 0 }, out.audio )
+                        )
             )
 
 
-{-| What happens to the game.
+{-| What happens.
 
   - `Tick ms`: this many milliseconds have passed.
-  - `KeyDown`, `KeyUp`: a game control was pressed or let go.
-  - `MouseMoved dx`: the mouse moved sideways (positive is right), turning (or
-    strafing while `Strafe` is held).
+  - `Event`: a key went down or up, or the mouse moved or clicked (Doom key codes,
+    see `Doom.Event`).
+  - `SavedGames`: the host's saved game slots (0 to 5), if it has them later than
+    `start`.
 
 -}
 type Msg
     = Tick Float
-    | KeyDown Key
-    | KeyUp Key
-    | MouseMoved Int
-
-
-{-| The game's controls. `WeaponKey n` is the number key n (1 to 8). `Strafe` turns
-the turning keys into strafing; `Run` is the speed key; `Pause` pauses and unpauses.
--}
-type Key
-    = Forward
-    | Backward
-    | TurnLeft
-    | TurnRight
-    | StrafeLeft
-    | StrafeRight
-    | Strafe
-    | Run
-    | Fire
-    | Use
-    | WeaponKey Int
-    | Pause
+    | Event Event
+    | SavedGames (Dict Int Bytes)
 
 
 {-| How long a tic lasts: 1000 / 35 ms.
@@ -171,14 +157,16 @@ msPerTic =
     1000 / 35
 
 
+{-| The most passes (or melt frames) one `Tick` runs.
+-}
 maxCatchUp : Int
 maxCatchUp =
     4
 
 
-{-| Advance the game. Gives back the sounds the tics run asked for, in order.
+{-| Advance the program. Gives back the sound and music commands, in order.
 -}
-update : Msg -> Model -> ( Model, List Sound.Event )
+update : Msg -> Model -> ( Model, List Command )
 update msg (Model m) =
     case msg of
         Tick ms ->
@@ -189,9 +177,6 @@ update msg (Model m) =
                 due =
                     floor (pending / msPerTic)
 
-                runs =
-                    min maxCatchUp due
-
                 left =
                     if due > maxCatchUp then
                         0
@@ -199,124 +184,94 @@ update msg (Model m) =
                     else
                         pending - toFloat due * msPerTic
             in
-            runTics runs ( Model { m | pendingMs = left }, [] )
+            step (min maxCatchUp due) ( Model { m | pendingMs = left }, [] )
 
-        KeyDown Pause ->
-            ( Model { m | sendpause = True }, [] )
+        Event ev ->
+            ( Model { m | events = m.events ++ [ ev ] }, [] )
 
-        KeyDown key ->
-            ( Model
-                { m
-                    | held =
-                        if List.member key m.held then
-                            m.held
-
-                        else
-                            key :: m.held
-                }
-            , []
-            )
-
-        KeyUp key ->
-            ( Model { m | held = List.filter ((/=) key) m.held }, [] )
-
-        MouseMoved dx ->
-            ( Model { m | mouseX = m.mouseX + dx }, [] )
+        SavedGames slots ->
+            ( Model { m | shell = Shell.setSavedGames slots m.shell }, [] )
 
 
-runTics : Int -> ( Model, List Sound.Event ) -> ( Model, List Sound.Event )
-runTics n ( Model m, sounds ) =
-    if n <= 0 then
-        ( Model m, sounds )
+step : Int -> ( Model, List Command ) -> ( Model, List Command )
+step n ( Model m, audio ) =
+    if n <= 0 || Shell.finished m.shell then
+        ( Model m, audio )
+
+    else if Shell.wiping m.shell then
+        let
+            ( shell, out ) =
+                Shell.wipeStep m.shell
+        in
+        step (n - 1) ( Model { m | shell = shell }, audio ++ out.audio )
 
     else
         let
-            ( cmd, turnheld ) =
-                Input.buildTiccmd (input m.held m.mouseX) m.turnheld
-
-            withPause =
-                if m.sendpause then
-                    { cmd | buttons = Ticcmd.btSpecial + Ticcmd.btsPause }
-
-                else
-                    cmd
-
-            ( g, tic ) =
-                Game.tick (netcmds (Game.consolePlayer m.game) withPause) m.game
+            ( shell, out ) =
+                Shell.iteration m.events m.shell
         in
-        runTics (n - 1)
-            ( Model { m | game = g, mouseX = 0, turnheld = turnheld, sendpause = False }
-            , sounds ++ tic.sounds
-            )
+        step (n - 1) ( Model { m | shell = shell, events = [] }, audio ++ out.audio )
 
 
-netcmds : Int -> Ticcmd -> Array.Array Ticcmd
-netcmds console cmd =
-    Array.initialize 4
-        (\i ->
-            if i == console then
-                cmd
-
-            else
-                Ticcmd.empty
-        )
+{-| The screen to show now.
+-}
+view : Model -> Screen
+view (Model m) =
+    Shell.screen m.shell
 
 
-input : List Key -> Int -> Input
-input held mouseX =
-    let
-        is k =
-            List.member k held
-    in
-    { forward = is Forward
-    , backward = is Backward
-    , turnLeft = is TurnLeft
-    , turnRight = is TurnRight
-    , strafeLeft = is StrafeLeft
-    , strafeRight = is StrafeRight
-    , strafe = is Strafe
-    , run = is Run
-    , fire = is Fire
-    , use = is Use
-    , weapon =
-        -- the lowest weapon key held wins, as G_BuildTiccmd checks '1' first
-        List.range 1 8 |> List.filter (\n -> is (WeaponKey n)) |> List.head
-    , mouseX = mouseX
-    }
+{-| The settings (screen size, volumes, mouse sensitivity...) as the menu left them.
+-}
+settings : Model -> Settings
+settings (Model m) =
+    Shell.menuSettings m.shell
 
 
-{-| The whole game, for anything the other accessors don't give.
+{-| The saved game slots, with any the player saved.
+-}
+savedGames : Model -> Dict Int Bytes
+savedGames (Model m) =
+    Shell.savedGames m.shell
+
+
+{-| Whether the program has ended (a -playdemo demo is over, or Quit without
+`quitToTitle`).
+-}
+finished : Model -> Bool
+finished (Model m) =
+    Shell.finished m.shell
+
+
+{-| The whole game.
 -}
 game : Model -> Game
 game (Model m) =
-    m.game
+    Shell.game m.shell
 
 
-{-| The WAD the game runs from (for the renderer's graphics).
+{-| The WAD.
 -}
 wad : Model -> Wad
-wad (Model m) =
-    m.game.wad
+wad model =
+    (game model).wad
 
 
-{-| The level being played and its world (with `Doom.Game.consolePlayer`'s view), if
-the game is in a level.
+{-| The level being played and its world, if the game is in a level.
 -}
 playing : Model -> Maybe ( Env, World )
-playing (Model m) =
-    Game.playing m.game
+playing model =
+    Game.playing (game model)
 
 
-{-| Whether the game is in a level, the intermission (with its counters), the finale,
-or not running.
+{-| The game's state: a level, the intermission, the finale, or the title pages.
 -}
 state : Model -> GameState
-state (Model m) =
-    m.game.state
+state model =
+    (game model).state
 
 
 {-| Why the game stopped, if a level couldn't be loaded.
 -}
 error : Model -> Maybe String
-error (Model m) =
-    m.game.error
+error model =
+    (game model).error

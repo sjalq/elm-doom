@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doom sound test</title>
+<link rel="stylesheet" href="page.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<main>
+  <canvas id="screen" width="320" height="200"></canvas>
+  <p id="help">Loading freedoom1.wad&hellip; (or drop your own IWAD here)</p>
+</main>
+<script src="soundtest.js"></script>
+<script type="module">
+  import { fetchWad, onDrop, run } from './host.js';
+  const canvas = document.getElementById('screen');
+  const help = document.getElementById('help');
+  const start = (buffer) => {
+    const app = Elm.SoundTest.init({ node: document.createElement('div') });
+    run(app, canvas, buffer, (s) => { help.textContent = s; });
+  };
+  let started = false;
+  onDrop(document.body, (buffer) => { if (!started) { started = true; start(buffer); } });
+  fetchWad('freedoom1.wad')
+    .then((b) => { if (!started) { started = true; start(b); } })
+    .catch((e) => { help.textContent = e.message + ': drop a WAD file here'; });
+</script>
+</body>
+</html>

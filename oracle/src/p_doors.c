@@ -1,3 +1,11 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below).
+// DOS behaviour (the target is the DOS v1.9 executable where it differs
+// from linuxdoom-1.10; each marked "DOOM-ORACLE: DOS behaviour"):
+//  - EV_VerticalDoor: a raise door line whose sector moves as a lift, floor
+//    or ceiling hits that thinker's field at the 32-bit vldoor_t.direction
+//    offset, as in DOS.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -423,14 +431,39 @@ EV_VerticalDoor
 	  case	27:
 	  case	28:
 	  case	117:
-	    if (door->direction == -1)
-		door->direction = 1;	// go back up
-	    else
+	    // DOOM-ORACLE: DOS behaviour (see chocolate-doom p_doors.c:
+	    // EV_VerticalDoor): specialdata may be a lift, floor or ceiling;
+	    // door->direction is then the field at the 32-bit offset of
+	    // vldoor_t.direction (28): plat_t.wait, floormove_t.newspecial,
+	    // ceiling_t.speed (the 64-bit layout would hit another field), also
+	    // for one in stasis.
 	    {
-		if (!thing->player)
-		    return;		// JDC: bad guys never close doors
-		
-		door->direction = -1;	// start going down immediately
+		int* dir = &door->direction;
+		if (door->thinker.function.acp1 == (actionf_p1) T_PlatRaise)
+		    dir = &((plat_t*) door)->wait;
+		else if (door->thinker.function.acp1 == (actionf_p1) T_MoveFloor)
+		    dir = &((floormove_t*) door)->newspecial;
+		else if (door->thinker.function.acp1 == (actionf_p1) T_MoveCeiling)
+		    dir = (int*) &((ceiling_t*) door)->speed;
+		else if (door->thinker.function.acv == (actionf_v) NULL)
+		{
+		    // a lift or crusher in stasis
+		    int k;
+		    for (k = 0; k < MAXPLATS; k++)
+			if (activeplats[k] == (plat_t*) door)
+			    dir = &((plat_t*) door)->wait;
+		    for (k = 0; k < MAXCEILINGS; k++)
+			if (activeceilings[k] == (ceiling_t*) door)
+			    dir = (int*) &((ceiling_t*) door)->speed;
+		}
+		if (*dir == -1)
+		    *dir = 1;	// go back up
+		else
+		{
+		    if (!thing->player)
+			return;		// JDC: bad guys never close doors
+		    *dir = -1;	// start going down immediately
+		}
 	    }
 	    return;
 	}

@@ -1,8 +1,17 @@
 // DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
 // for DOOM-ORACLE below). None of them changes how the game plays:
-//  - G_DoPlayDemo: accepts demo version 109 (same format as 110) and a demo
+//  - G_CheckSpot: the teleport fog's offset for starts facing 180..315
+//    degrees reads finetangent[] as the DOS executable does (vanilla reads
+//    out of bounds there; the 64-bit build would crash).
+//  - G_DoSaveGame: a 1 MB buffer of its own and that as the limit (the
+//    64-bit layout is bigger than the 32-bit one SAVEGAMESIZE is for).
+//  - G_Ticker calls Oracle_SaveCheck first (does nothing without
+//    -savecheck; see oracle_savecheck.c).
+//  - G_DoPlayDemo: accepts demo version 109 only, as DOS v1.9 does, and a demo
 //    already in memory (oracle_demodata: a demo file or ticcmd stream);
 //    a wrong version is an error instead of a silent hang.
+//  - G_CheckSpot: the teleport fog offset of a start facing 180..315 is
+//    read from finetangent as the 32-bit original does (see there).
 //  - G_Ticker: calls Oracle_LevelTic (prints the state line) right after a
 //    P_Ticker that advanced leveltime; it only reads game state.
 
@@ -82,6 +91,7 @@ rcsid[] = "$Id: g_game.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 // DOOM-ORACLE: oracle_main.c
 extern byte*	oracle_demodata;
 void		Oracle_LevelTic (void);
+void		Oracle_SaveCheck (void);	// oracle_savecheck.c
 
 #define SAVEGAMESIZE	0x2c000
 #define SAVESTRINGSIZE	24
@@ -620,6 +630,9 @@ void G_Ticker (void)
     int		buf; 
     ticcmd_t*	cmd;
     
+    // DOOM-ORACLE: -savecheck saves and loads the game here, once.
+    Oracle_SaveCheck ();
+
     // do player reborns if needed
     for (i=0 ; i<MAXPLAYERS ; i++) 
 	if (playeringame[i] && players[i].playerstate == PST_REBORN) 
@@ -896,9 +909,18 @@ G_CheckSpot
     ss = R_PointInSubsector (x,y); 
     an = ( ANG45 * (mthing->angle/45) ) >> ANGLETOFINESHIFT; 
  
-    mo = P_SpawnMobj (x+20*finecosine[an], y+20*finesine[an] 
-		      , ss->sector->floorheight 
-		      , MT_TFOG); 
+    // DOOM-ORACLE: ANG45*(angle/45) overflows int for starts facing
+    // 180..315, so an is -4096..-1024 stored in an unsigned; on the 32-bit
+    // original finesine[an] wraps around the address space to
+    // finetangent[4096+an] (finetangent lies right before finesine), on
+    // 64-bit it is a wild read. Same values, read explicitly:
+    {
+	int ci = (int) an + FINEANGLES/4;
+	int si = (int) an;
+	fixed_t xa = ci < 0 ? finetangent[FINEANGLES/2 + ci] : finesine[ci];
+	fixed_t ya = si < 0 ? finetangent[FINEANGLES/2 + si] : finesine[si];
+	mo = P_SpawnMobj (x+20*xa, y+20*ya, ss->sector->floorheight, MT_TFOG);
+    }
 	 
     if (players[consoleplayer].viewz != 1) 
 	S_StartSound (mo, sfx_telept);	// don't start sound on first frame 
@@ -1299,7 +1321,15 @@ void G_DoSaveGame (void)
 	sprintf (name,SAVEGAMENAME"%d.dsg",savegameslot); 
     description = savedescription; 
 	 
-    save_p = savebuffer = screens[1]+0x4000; 
+    // DOOM-ORACLE: a buffer of its own, big enough for the 64-bit layout
+    // (the original's screens[1]+0x4000 holds SAVEGAMESIZE bytes of the 32-bit
+    // one).
+    {
+	static byte* oracle_savebuffer;
+	if (!oracle_savebuffer)
+	    oracle_savebuffer = malloc (0x100000);
+	save_p = savebuffer = oracle_savebuffer;
+    }
 	 
     memcpy (save_p, description, SAVESTRINGSIZE); 
     save_p += SAVESTRINGSIZE; 
@@ -1325,7 +1355,9 @@ void G_DoSaveGame (void)
     *save_p++ = 0x1d;		// consistancy marker 
 	 
     length = save_p - savebuffer; 
-    if (length > SAVEGAMESIZE) 
+    // DOOM-ORACLE: SAVEGAMESIZE is the limit for the 32-bit layout, which
+    // this 64-bit file is bigger than; doom/src/Doom/Save.elm checks it.
+    if (length > 0x100000) 
 	I_Error ("Savegame buffer overrun"); 
     M_WriteFile (name, savebuffer, length); 
     gameaction = ga_nothing; 
@@ -1608,8 +1640,10 @@ void G_DoPlayDemo (void)
 	demobuffer = demo_p = oracle_demodata;
     else
 	demobuffer = demo_p = W_CacheLumpName (defdemoname, PU_STATIC);
-    // DOOM-ORACLE: v1.9 (109) demos have the same format as 110 ones.
-    if ( *demo_p != VERSION && *demo_p != 109)
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_DoPlayDemo):
+    // the DOS v1.9 executable plays only version 109 demos (linuxdoom-1.10's
+    // VERSION is 110). DOS then just doesn't play it; here it is an error.
+    if ( *demo_p != 109)
 	I_Error ("Demo is from a different game version (%d)!", *demo_p);
     demo_p++;
     

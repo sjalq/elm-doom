@@ -3,8 +3,9 @@ module Doom.Play.Floor exposing (think, doFloor, doFloorByTag, buildStairs, doDo
 {-| Moving floors and stairs (p\_floor.c, and EV\_DoDonut from p\_spec.c).
 
 Fields C leaves unset start at 0 here: `newspecial` (and `texture`) of most floors,
-and every field EV\_BuildStairs doesn't set (a stair step's `crush` is False and its
-type `RaiseFloor`, which behaves like any type but the two that change textures).
+and the fields EV\_BuildStairs doesn't set: a stair step's type is LowerFloor (0) and
+its `crush` False, but it moves as the DOS executable's uninitialised `crush` makes it
+(see `crushOf`).
 
 @docs think, doFloor, doFloorByTag, buildStairs, doDonut
 
@@ -33,7 +34,7 @@ think : Env -> ThinkerId -> FloorMove -> World -> World
 think env id floor world =
     let
         ( res, moved ) =
-            Plane.movePlane env floor.sector floor.speed floor.floordestheight floor.crush 0 floor.direction world
+            Plane.movePlaneWith env floor.sector floor.speed floor.floordestheight (crushOf floor) 0 floor.direction world
 
         sounded =
             if Bitwise.and moved.leveltime 7 == 0 then
@@ -62,6 +63,22 @@ think env id floor world =
 
     else
         sounded
+
+
+{-| The crush argument a floor moves with. A stair step is the only floor of type
+LowerFloor that goes up (EV\_BuildStairs leaves `type` 0 and `crush` unset, see
+Plane.StairCrush).
+-}
+crushOf : FloorMove -> Plane.Crush
+crushOf floor =
+    if floor.type_ == LowerFloor && floor.direction == 1 then
+        Plane.StairCrush
+
+    else if floor.crush then
+        Plane.Crushes
+
+    else
+        Plane.NoCrush
 
 
 {-| A floor thinker with nothing set yet.
@@ -300,7 +317,7 @@ buildStairs env lineId type_ world =
         step sec height =
             let
                 blank =
-                    blankFloor RaiseFloor sec
+                    blankFloor LowerFloor sec
             in
             { blank | direction = 1, speed = speed, floordestheight = height }
 
@@ -384,25 +401,46 @@ climb env stairsize texture step sec height world =
 moving, the sector around it (across its first line) rises as slime to the floor of
 the sector beyond, taking that sector's flat, and the hole lowers to the same height.
 
-The C source's test `(!flags & ML_TWOSIDED)` is always false, so only lines whose back
-is the hole are skipped. Where C would read through a null sector (the hole's first
-line or the ring's line being one-sided), this port skips the line.
+As the DOS executable does (chocolate-doom p\_spec.c:EV\_DoDonut and DonutOverrun),
+not linuxdoom-1.10: the sector beyond is the back of the ring's first line whose back
+isn't the hole (linuxdoom's extra test `(!flags & ML_TWOSIDED)` is always false). If
+that line is one-sided, DOS reads the "sector" at address 0: floor height 0 and
+flat 0x16 (DONUT\_FLOORHEIGHT\_DEFAULT, DONUT\_FLOORPIC\_DEFAULT). If the hole's first
+line is one-sided (no ring), no further tagged sector is looked at.
 
 -}
 doDonut : Env -> LineId -> World -> ( Bool, World )
 doDonut env lineId world =
-    SpecUtil.foldTaggedSectors (Level.line lineId env.level).tag
-        (\s1 ( rtn, w ) ->
-            if (World.sector s1 w).specialdata /= Nothing then
+    let
+        tag =
+            (Level.line lineId env.level).tag
+
+        loop secnum rtn w =
+            let
+                s1 =
+                    SpecUtil.findSectorFromTag tag secnum w
+            in
+            if s1 < 0 then
                 ( rtn, w )
 
+            else if (World.sector s1 w).specialdata /= Nothing then
+                loop s1 rtn w
+
             else
-                ( True, donut env s1 w )
-        )
-        world
+                case donut env s1 w of
+                    Just donutted ->
+                        loop s1 True donutted
+
+                    Nothing ->
+                        -- the hole has no ring: chocolate-doom's `break`
+                        ( True, w )
+    in
+    loop -1 False world
 
 
-donut : Env -> SectorId -> World -> World
+{-| The donut around one hole; Nothing when the hole's first line is one-sided.
+-}
+donut : Env -> SectorId -> World -> Maybe World
 donut env s1 world =
     let
         firstLine =
@@ -410,21 +448,30 @@ donut env s1 world =
     in
     case firstLine |> Maybe.andThen (\l -> SpecUtil.getNextSector env.level l s1) of
         Nothing ->
-            world
+            Nothing
 
         Just s2 ->
             let
                 ring =
                     SpecUtil.sectorLines env.level s2
-                        |> List.filterMap (\l -> (Level.line l env.level).backsector)
-                        |> List.filter (\back -> back /= s1)
+                        |> List.map (\l -> (Level.line l env.level).backsector)
+                        |> List.filter (\back -> back /= Just s1)
                         |> List.head
             in
             case ring of
-                Just s3 ->
+                Just back ->
                     let
-                        outer =
-                            World.sector s3 world
+                        ( s3floorheight, s3floorpic ) =
+                            case back of
+                                Just s3 ->
+                                    let
+                                        outer =
+                                            World.sector s3 world
+                                    in
+                                    ( outer.floorheight, outer.floorpic )
+
+                                Nothing ->
+                                    ( 0, 0x16 )
 
                         slime =
                             blankFloor DonutRaise s2
@@ -437,16 +484,17 @@ donut env s1 world =
                             { slime
                                 | direction = 1
                                 , speed = Thinker.floorSpeed // 2
-                                , texture = outer.floorpic
+                                , texture = s3floorpic
                                 , newspecial = 0
-                                , floordestheight = outer.floorheight
+                                , floordestheight = s3floorheight
                             }
                         |> addFloor
                             { hole
                                 | direction = -1
                                 , speed = Thinker.floorSpeed // 2
-                                , floordestheight = outer.floorheight
+                                , floordestheight = s3floorheight
                             }
+                        |> Just
 
                 Nothing ->
-                    world
+                    Just world

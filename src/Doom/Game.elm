@@ -1,6 +1,6 @@
 module Doom.Game exposing
-    ( Game, GameState(..), GameAction(..), FinaleState, Tic
-    , new, newGame, playDemo, tick
+    ( Game, GameState(..), GameAction(..), Tic
+    , new, newGame, playDemo, tick, initNew
     , playing, consolePlayer, gametic, playerNames
     )
 
@@ -16,14 +16,16 @@ demo replaces them with its own):
         |> Tuple.first
         |> Game.playing
 
-Not translated: saving and loading games (a save request is ignored), the menus, the
+Not translated here: saving and loading games (`Doom.Save` does them; a save request in a ticcmd is ignored), the menus, the
 status bar, automap and chat tickers (they don't change the game), the demo loop and
-title pages (a demo that ends leaves the game on `DemoScreen`, as `-playdemo` quits),
-and the finale's text and cast (the finale counts its tics and, in Doom II, moves on
-when someone presses a button).
+title pages (with `singledemo`, a demo that ends leaves the game on `DemoScreen`, as
+`-playdemo` quits; without it, `Tic.demoEnded` tells the demo loop to move on).
+The intermission and the finale run here (`Doom.Intermission`, `Doom.Finale`); their
+sounds go into `Tic.sounds` with no origin, and the finale's F\_Responder is
+`Doom.Finale.responder`.
 
-@docs Game, GameState, GameAction, FinaleState, Tic
-@docs new, newGame, playDemo, tick
+@docs Game, GameState, GameAction, Tic
+@docs new, newGame, playDemo, tick, initNew
 @docs playing, consolePlayer, gametic, playerNames
 
 -}
@@ -33,6 +35,7 @@ import Bitwise
 import Doom.Data exposing (Data)
 import Doom.Defs as Defs exposing (GameMode(..), PlayerState(..), Skill(..))
 import Doom.Demo as Demo exposing (Demo)
+import Doom.Finale as Finale
 import Doom.Flags as Flags
 import Doom.Intermission as Intermission exposing (Intermission, WbStart)
 import Doom.Play.Env exposing (Env, Params)
@@ -65,6 +68,8 @@ type alias Game =
     , respawnparm : Bool
     , fastparm : Bool
     , demoplayback : Bool
+    , singledemo : Bool
+    , menuactive : Bool
     , netdemo : Bool
     , state : GameState
     , action : GameAction
@@ -76,7 +81,7 @@ type alias Game =
     , wminfo : WbStart
     , bodyque : BodyQue
     , demo : Maybe Demo
-    , dofrags : Int
+    , wiStatics : Intermission.Statics
     , error : Maybe String
     }
 
@@ -87,7 +92,7 @@ demo ends.
 type GameState
     = Level
     | Intermission Intermission
-    | Finale FinaleState
+    | Finale Finale.Model
     | DemoScreen
 
 
@@ -103,19 +108,12 @@ type GameAction
     | WorldDone
 
 
-{-| f\_finale.c's `finalecount` and `finalestage` (2 is the Doom II cast).
--}
-type alias FinaleState =
-    { count : Int
-    , stage : Int
-    }
-
-
 {-| What a tic did: whether the level ran (P\_Ticker), and the sounds it asked for, in
 order.
 -}
 type alias Tic =
     { ranLevel : Bool
+    , demoEnded : Bool
     , sounds : List Sound.Event
     }
 
@@ -141,6 +139,8 @@ new wad data action =
     , respawnparm = False
     , fastparm = False
     , demoplayback = False
+    , singledemo = True
+    , menuactive = False
     , netdemo = False
     , state = DemoScreen
     , action = action
@@ -164,7 +164,7 @@ new wad data action =
         }
     , bodyque = Setup.emptyBodyQue
     , demo = Nothing
-    , dofrags = 0
+    , wiStatics = Intermission.initialStatics
     , error = Nothing
     }
 
@@ -234,24 +234,39 @@ tick netcmds game0 =
     in
     case readCmds netcmds game1 of
         Nothing ->
-            -- the demo is over: like -playdemo, stop here
-            let
-                ended =
-                    checkDemoStatus game1
-            in
-            ( ended, { ranLevel = False, sounds = List.reverse ended.world.sounds } )
+            if game1.singledemo then
+                -- the demo is over: like -playdemo, stop here
+                let
+                    ended =
+                        checkDemoStatus game1
+                in
+                ( ended, { ranLevel = False, demoEnded = True, sounds = List.reverse ended.world.sounds } )
+
+            else
+                -- in the demo loop, G_CheckDemoStatus asks for the next page and the tic
+                -- goes on with the console player's own command
+                let
+                    ended =
+                        endDemo game1
+                in
+                runTic True (readCmds netcmds ended |> Maybe.withDefault ended)
 
         Just game2 ->
-            let
-                ( game3, ranLevel ) =
-                    game2 |> specialButtons |> mainAction
+            runTic False game2
 
-                world =
-                    game3.world
-            in
-            ( { game3 | world = { world | gametic = world.gametic + 1, sounds = [] } }
-            , { ranLevel = ranLevel, sounds = List.reverse world.sounds }
-            )
+
+runTic : Bool -> Game -> ( Game, Tic )
+runTic demoEnded game2 =
+    let
+        ( game3, ranLevel ) =
+            game2 |> specialButtons |> mainAction
+
+        world =
+            game3.world
+    in
+    ( { game3 | world = { world | gametic = world.gametic + 1, sounds = [] } }
+    , { ranLevel = ranLevel, demoEnded = demoEnded, sounds = List.reverse world.sounds }
+    )
 
 
 clearSounds : World -> World
@@ -401,13 +416,26 @@ specialButtons game =
         playerIndexes
 
 
+{-| P\_Ticker's "pause if in menu and at least one tic has been run": the menu is up
+(`menuactive`, which the game shell keeps up to date), in a single-player game that
+isn't a demo, and the console player's view height isn't the 1 that P\_SpawnPlayer's
+mobj starts with before its first tic.
+-}
+menuPause : Game -> Bool
+menuPause game =
+    not game.params.netgame
+        && game.menuactive
+        && not game.demoplayback
+        && (World.player game.params.consoleplayer game.world |> Maybe.map (\p -> p.viewz /= 1) |> Maybe.withDefault True)
+
+
 mainAction : Game -> ( Game, Bool )
 mainAction game =
     case game.state of
         Level ->
             case game.env of
                 Just env ->
-                    if game.paused then
+                    if game.paused || menuPause game then
                         ( game, False )
 
                     else
@@ -433,7 +461,7 @@ mainAction game =
                     ( g, False )
 
                 Intermission.WorldDone ->
-                    ( worldDone g, False )
+                    ( worldDone { g | wiStatics = Intermission.statics next }, False )
 
         Finale finale ->
             ( finaleTicker finale game, False )
@@ -543,7 +571,8 @@ doPlayDemo demo game =
     { started | demoplayback = True, demo = Just demo }
 
 
-{-| G\_InitNew: clamp the episode and map to the game, reset the random numbers,
+{-| G\_InitNew (what -warp and -skill start with, keeping -fast, -respawn and
+-nomonsters, which G\_DoNewGame clears): clamp the episode and map to the game, reset the random numbers,
 settle respawning and fast monsters, make every player start afresh, and load the
 level.
 -}
@@ -708,14 +737,29 @@ tryOtherStarts env playernum i ( que, world ) =
                 tryOtherStarts env playernum (i + 1) state
 
 
-{-| G\_CheckDemoStatus when a demo ends: the game stops, and its settings go back to a
-single-player game's.
+{-| G\_CheckDemoStatus when a -playdemo demo ends: the game stops, and its settings go
+back to a single-player game's.
 -}
 checkDemoStatus : Game -> Game
 checkDemoStatus game =
     let
-        params =
+        ended =
+            endDemo game
+    in
+    { ended | state = DemoScreen, env = Nothing }
+
+
+{-| G\_CheckDemoStatus in the demo loop: the settings go back to a single-player
+game's; the level stays until D\_DoAdvanceDemo moves on.
+-}
+endDemo : Game -> Game
+endDemo game =
+    let
+        p =
             game.params
+
+        params =
+            { p | netgame = False, deathmatch = 0, nomonsters = False, consoleplayer = 0 }
 
         world =
             game.world
@@ -724,12 +768,11 @@ checkDemoStatus game =
         | demoplayback = False
         , netdemo = False
         , demo = Nothing
-        , params = { params | netgame = False, deathmatch = 0, nomonsters = False, consoleplayer = 0 }
+        , params = params
+        , env = Maybe.map (\env -> { env | params = params }) game.env
         , respawnparm = False
         , fastparm = False
         , world = { world | playeringame = Array.fromList [ firstInGame world, False, False, False ] }
-        , state = DemoScreen
-        , env = Nothing
     }
 
 
@@ -882,10 +925,14 @@ doCompleted game0 =
                         world.players
                 }
         in
+        let
+            ( wi, rng ) =
+                Intermission.start (intermissionContext game) game.wiStatics wminfo world.rng
+        in
         { game
-            | world = world
+            | world = { world | rng = rng }
             , wminfo = wminfo
-            , state = Intermission (Intermission.start (intermissionContext game) game.dofrags wminfo)
+            , state = Intermission wi
         }
 
 
@@ -970,32 +1017,37 @@ doWorldDone game =
 -}
 startFinale : Game -> Game
 startFinale game =
-    { game | action = NoAction, state = Finale { count = 0, stage = 0 } }
+    { game
+        | action = NoAction
+        , state = Finale (Finale.start game.params.gameMode game.params.episode game.params.map)
+    }
 
 
-{-| F\_Ticker: in Doom II, a button pressed after the first 50 tics moves on (to the
-cast after MAP30).
+{-| F\_Ticker, with every player's buttons (in Doom II, a press after the first 50
+tics moves on); its sounds go into `World.sounds`.
 -}
-finaleTicker : FinaleState -> Game -> Game
+finaleTicker : Finale.Model -> Game -> Game
 finaleTicker finale game =
     let
         anyButton =
             Array.toList game.world.players |> List.any (\p -> p.cmd.buttons /= 0)
 
-        skipped =
-            if game.params.gameMode == Commercial && finale.count > 50 && anyButton then
-                if game.params.map == 30 then
-                    { game | state = Finale { finale | stage = 2 } }
+        t =
+            Finale.ticker anyButton game.world.rng finale
 
-                else
-                    { game | action = WorldDone }
+        w0 =
+            game.world
+
+        world =
+            List.foldl (\s w -> { w | sounds = s :: w.sounds }) { w0 | rng = t.rng } t.sounds
+    in
+    { game
+        | state = Finale t.model
+        , world = world
+        , action =
+            if t.worldDone then
+                WorldDone
 
             else
-                game
-    in
-    case skipped.state of
-        Finale f ->
-            { skipped | state = Finale { f | count = f.count + 1 } }
-
-        _ ->
-            skipped
+                game.action
+    }

@@ -93,6 +93,7 @@ load wad data =
         , cachedXstep = Array.repeat 200 0
         , cachedYstep = Array.repeat 200 0
         , view = Nothing
+        , columnofs = Array.repeat 1120 0
         }
 
 

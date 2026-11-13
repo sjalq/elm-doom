@@ -370,34 +370,21 @@ pixel x y (Internal.Framebuffer cols) =
 toBytes : Framebuffer -> Bytes
 toBytes (Internal.Framebuffer cols) =
     let
-        at x y =
-            case Array.get x cols of
-                Just col ->
-                    Array.get y col |> Maybe.withDefault 0
-
-                Nothing ->
-                    0
+        -- the columns turned into rows: each column's pixels put in front of
+        -- the rows built from the columns to its right
+        rows =
+            Array.foldr (\col acc -> List.map2 (::) (Array.toList col) acc) (List.repeat height []) cols
 
         -- four pixels to a word, so there are a quarter as many encoders
-        row y x acc =
-            if x < 0 then
-                acc
+        pack row acc =
+            case row of
+                a :: b :: c :: d :: rest ->
+                    E.unsignedInt32 BE (((a * 256 + b) * 256 + c) * 256 + d) :: pack rest acc
 
-            else
-                row y
-                    (x - 4)
-                    (E.unsignedInt32 BE (((at (x - 3) y * 256 + at (x - 2) y) * 256 + at (x - 1) y) * 256 + at x y)
-                        :: acc
-                    )
-
-        rows y acc =
-            if y < 0 then
-                acc
-
-            else
-                rows (y - 1) (row y (width - 1) acc)
+                _ ->
+                    acc
     in
-    E.encode (E.sequence (rows (height - 1) []))
+    E.encode (E.sequence (List.foldr pack [] rows))
 
 
 {-| The screen as it is kept: 320 columns, left to right, of 200 palette indices

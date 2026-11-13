@@ -113,7 +113,14 @@ solidColumn newestFirst old =
                     List.sortBy (\p -> -p.top) placed
             in
             if disjoint VI.rowCount descending then
-                Array.fromList (layDown old VI.rowCount descending [])
+                case contiguous descending of
+                    Just ( top, bottom, pixels ) ->
+                        -- the usual case: the view's rows in one piece, the rest
+                        -- of the column as it was
+                        Array.append (Array.append (Array.slice 0 top old) (Array.fromList pixels)) (Array.slice bottom VI.rowCount old)
+
+                    Nothing ->
+                        Array.fromList (layDown old VI.rowCount descending [])
 
             else
                 List.foldr (\p col -> setRun p.top p.pixels col) old placed
@@ -130,6 +137,37 @@ disjoint end runs =
 
         p :: rest ->
             p.top >= 0 && p.top + p.length <= end && disjoint p.top rest
+
+
+{-| Runs (bottom up, disjoint) that leave no gap between them: the rows they cover
+and their pixels from the top.
+-}
+contiguous : List Placed -> Maybe ( Int, Int, List Int )
+contiguous runs =
+    case runs of
+        [] ->
+            Nothing
+
+        last :: _ ->
+            let
+                go top rest acc =
+                    case rest of
+                        [] ->
+                            Just ( top, last.top + last.length, acc )
+
+                        p :: more ->
+                            if p.top + p.length == top then
+                                go p.top more (p.pixels ++ acc)
+
+                            else
+                                Nothing
+            in
+            case runs of
+                p :: more ->
+                    go p.top more p.pixels
+
+                [] ->
+                    Nothing
 
 
 {-| The column from row 0 to `end - 1`: the runs (bottom up) with the old pixels in

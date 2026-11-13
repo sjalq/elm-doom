@@ -447,7 +447,12 @@ iteration events (Shell m0) =
                     ( m2, acc1 )
 
             ( m4, acc4 ) =
-                gTicker cmd ( { m3 | menu = Menu.ticker m3.menu }, acc3 )
+                if m1.finished then
+                    -- I_Quit in the middle of D_ProcessEvents
+                    ( m1, acc1 )
+
+                else
+                    gTicker cmd ( { m3 | menu = Menu.ticker m3.menu }, acc3 )
         in
         if m4.finished then
             ( Shell m4, { frames = [], audio = List.reverse acc4.audio, saved = List.reverse acc4.saved } )

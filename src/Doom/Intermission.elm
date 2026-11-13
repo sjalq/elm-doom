@@ -1,20 +1,28 @@
 module Doom.Intermission exposing
-    ( WbStart, WbPlayer, Intermission, Stage(..), Outcome(..), Context
-    , start, ticker
-    , percent
+    ( WbStart, WbPlayer, Intermission, Stage(..), Outcome(..), Context, Statics
+    , start, ticker, statics, initialStatics, music
+    , Anim, AnimKind(..), animDefs
+    , percent, fragSum
     )
 
-{-| The intermission between levels (wi\_stuff.c's WI\_Start and WI\_Ticker, without
-the drawing): the statistics counting up, the next level's spot on the episode map,
-and the button presses that hurry it along. Its timing matters to demos, which keep
-recording ticcmds through it.
+{-| The intermission between levels (wi\_stuff.c's WI\_Start and WI\_Ticker; the
+drawing is `Doom.Intermission.Draw`): the statistics counting up, the next level's
+spot on the episode map, the background animations' timing, and the button presses
+that hurry it along. Its timing matters to demos, which keep recording ticcmds through
+it.
 
-`wbs` is the `wbstartstruct_t` G\_DoCompleted fills in; the counters are what a
-renderer shows.
+`wbs` is the `wbstartstruct_t` G\_DoCompleted fills in; the counters are what the
+drawer shows.
 
-@docs WbStart, WbPlayer, Intermission, Stage, Outcome, Context
-@docs start, ticker
-@docs percent
+The sounds the intermission makes (the pistol while counting, the explosion when a
+count is done, the shotgun cock when moving on) go into `World.sounds` with no origin,
+as S\_StartSound(NULL, ...) does, for a host to play as menu sounds; the music it
+starts is `music`.
+
+@docs WbStart, WbPlayer, Intermission, Stage, Outcome, Context, Statics
+@docs start, ticker, statics, initialStatics, music
+@docs Anim, AnimKind, animDefs
+@docs percent, fragSum
 
 -}
 
@@ -22,6 +30,7 @@ import Array exposing (Array)
 import Bitwise
 import Doom.Defs as Defs exposing (GameMode(..))
 import Doom.Info.Sfx as Sfx exposing (Sfx)
+import Doom.Random as Random exposing (Rng)
 import Doom.Sound as Sound
 import Doom.Ticcmd as Ticcmd
 import Doom.World as World exposing (World)
@@ -65,10 +74,13 @@ type Stage
 
 
 {-| wi\_stuff.c's statics. `statState` is `sp_state`, `ng_state` or `dm_state` (which
-one by the kind of game).
+one by the kind of game). `anims` are the background animations' `ctr` (the frame
+showing, -1 for none) and `nexttic`, in the order of `animDefs`. `pointerOn` is
+`snl_pointeron`: whether the "you are here" arrow shows.
 -}
 type alias Intermission =
-    { wbs : WbStart
+    { ctx : Context
+    , wbs : WbStart
     , stage : Stage
     , acceleratestage : Bool
     , cnt : Int
@@ -84,6 +96,14 @@ type alias Intermission =
     , dofrags : Int
     , dmFrags : Array (Array Int)
     , dmTotals : Array Int
+    , anims : Array AnimState
+    , pointerOn : Bool
+    }
+
+
+type alias AnimState =
+    { ctr : Int
+    , nexttic : Int
     }
 
 
@@ -104,11 +124,236 @@ type alias Context =
     }
 
 
-{-| WI\_Start. `dofrags` is wi\_stuff.c's static of that name from the last
-intermission, which it adds to rather than resets.
+{-| The two statics of wi\_stuff.c that outlive an intermission: `dofrags` (which
+WI\_initNetgameStats adds to rather than resets) and `snl_pointeron` (which the first
+frame of the next episode map shows before the ticker sets it).
 -}
-start : Context -> Int -> WbStart -> Intermission
-start ctx dofrags wbs0 =
+type alias Statics =
+    { dofrags : Int
+    , pointerOn : Bool
+    }
+
+
+{-| The statics when the program starts.
+-}
+initialStatics : Statics
+initialStatics =
+    { dofrags = 0, pointerOn = False }
+
+
+{-| The statics to carry over to the next intermission.
+-}
+statics : Intermission -> Statics
+statics wi =
+    { dofrags = wi.dofrags, pointerOn = wi.pointerOn }
+
+
+{-| The music lump the intermission has started (WI\_Ticker starts it on its first
+tic): D\_DM2INT in Doom II, D\_INTER otherwise, looping. A host plays it as
+S\_ChangeMusic does, which does nothing if it is already playing.
+-}
+music : Intermission -> Maybe String
+music wi =
+    if wi.bcnt < 1 then
+        Nothing
+
+    else if wi.ctx.gameMode == Commercial then
+        Just "D_DM2INT"
+
+    else
+        Just "D_INTER"
+
+
+
+-- BACKGROUND ANIMATIONS
+
+
+{-| animenum\_t: ANIM\_ALWAYS, ANIM\_RANDOM (with its period deviation and base
+period, `data1` and `data2`) and ANIM\_LEVEL (shown when the next level is this one,
+0-based).
+-}
+type AnimKind
+    = Always
+    | Random Int Int
+    | OnLevel Int
+
+
+{-| An anim\_t's fixed part: its kind, period in tics, number of frames, and where it
+goes on the screen. Its pictures are WIAeeaaff (episode, animation, frame).
+-}
+type alias Anim =
+    { kind : AnimKind
+    , period : Int
+    , nanims : Int
+    , x : Int
+    , y : Int
+    }
+
+
+{-| epsd0animinfo, epsd1animinfo and epsd2animinfo, by `wbs.epsd`: none for Doom II
+or episode 4.
+-}
+animDefs : GameMode -> Int -> Array Anim
+animDefs mode epsd =
+    let
+        third =
+            Defs.ticrate // 3
+
+        always period x y =
+            { kind = Always, period = period, nanims = 3, x = x, y = y }
+
+        level n nanims x y =
+            { kind = OnLevel n, period = third, nanims = nanims, x = x, y = y }
+    in
+    if mode == Commercial then
+        Array.empty
+
+    else
+        Array.fromList <|
+            case epsd of
+                0 ->
+                    [ always third 224 104
+                    , always third 184 160
+                    , always third 112 136
+                    , always third 72 112
+                    , always third 88 96
+                    , always third 64 48
+                    , always third 192 40
+                    , always third 136 16
+                    , always third 80 16
+                    , always third 64 24
+                    ]
+
+                1 ->
+                    [ level 1 1 128 136
+                    , level 2 1 128 136
+                    , level 3 1 128 136
+                    , level 4 1 128 136
+                    , level 5 1 128 136
+                    , level 6 1 128 136
+                    , level 7 1 128 136
+                    , level 8 3 192 144
+                    , level 8 1 128 136
+                    ]
+
+                2 ->
+                    [ always third 104 168
+                    , always third 40 136
+                    , always third 160 96
+                    , always third 104 80
+                    , always third 120 32
+                    , always (Defs.ticrate // 4) 40 0
+                    ]
+
+                _ ->
+                    []
+
+
+{-| WI\_initAnimatedBack: no frame showing, and the first change soon (after a random
+part of the period for those that always run).
+-}
+initAnimatedBack : Intermission -> World -> ( Intermission, World )
+initAnimatedBack wi world =
+    let
+        ( states, rng ) =
+            Array.foldl
+                (\a ( acc, r ) ->
+                    let
+                        ( nexttic, r2 ) =
+                            case a.kind of
+                                Always ->
+                                    Random.mRandom r |> Tuple.mapFirst (\n -> wi.bcnt + 1 + modBy a.period n)
+
+                                Random deviation base ->
+                                    Random.mRandom r |> Tuple.mapFirst (\n -> wi.bcnt + 1 + base + modBy deviation n)
+
+                                OnLevel _ ->
+                                    ( wi.bcnt + 1, r )
+                    in
+                    ( Array.push { ctr = -1, nexttic = nexttic } acc, r2 )
+                )
+                ( Array.empty, world.rng )
+                (animDefs wi.ctx.gameMode wi.wbs.epsd)
+    in
+    ( { wi | anims = states }, { world | rng = rng } )
+
+
+{-| WI\_updateAnimatedBack: the animations whose time has come move on a frame.
+-}
+updateAnimatedBack : Intermission -> Rng -> ( Intermission, Rng )
+updateAnimatedBack wi rng0 =
+    let
+        defs =
+            animDefs wi.ctx.gameMode wi.wbs.epsd
+
+        step i st rng =
+            case Array.get i defs of
+                Nothing ->
+                    ( st, rng )
+
+                Just a ->
+                    if wi.bcnt /= st.nexttic then
+                        ( st, rng )
+
+                    else
+                        case a.kind of
+                            Always ->
+                                ( { ctr =
+                                        if st.ctr + 1 >= a.nanims then
+                                            0
+
+                                        else
+                                            st.ctr + 1
+                                  , nexttic = wi.bcnt + a.period
+                                  }
+                                , rng
+                                )
+
+                            Random deviation base ->
+                                if st.ctr + 1 == a.nanims then
+                                    let
+                                        ( n, r2 ) =
+                                            Random.mRandom rng
+                                    in
+                                    ( { ctr = -1, nexttic = wi.bcnt + base + modBy deviation n }, r2 )
+
+                                else
+                                    ( { ctr = st.ctr + 1, nexttic = wi.bcnt + a.period }, rng )
+
+                            OnLevel n ->
+                                -- the original's "gawd-awful hack": the eighth one
+                                -- waits until the stats are done
+                                if not (wi.stage == StatCount && i == 7) && wi.wbs.next == n then
+                                    ( { ctr = min (st.ctr + 1) (a.nanims - 1), nexttic = wi.bcnt + a.period }, rng )
+
+                                else
+                                    ( st, rng )
+
+        ( states, rngOut ) =
+            Array.foldl
+                (\st ( acc, ( i, r ) ) ->
+                    let
+                        ( st2, r2 ) =
+                            step i st r
+                    in
+                    ( Array.push st2 acc, ( i + 1, r2 ) )
+                )
+                ( Array.empty, ( 0, rng0 ) )
+                wi.anims
+                |> (\( acc, ( _, r ) ) -> ( acc, r ))
+    in
+    ( { wi | anims = states }, rngOut )
+
+
+
+-- STARTING
+
+
+{-| WI\_Start, given what the last intermission left in wi\_stuff.c's statics. It
+draws from M\_Random (in `World.rng`) for the background animations.
+-}
+start : Context -> Statics -> WbStart -> World -> ( Intermission, World )
+start ctx carried wbs0 world =
     let
         wbs =
             { wbs0
@@ -127,7 +372,8 @@ start ctx dofrags wbs0 =
             Array.repeat Defs.maxPlayers 0
 
         base =
-            { wbs = wbs
+            { ctx = ctx
+            , wbs = wbs
             , stage = StatCount
             , acceleratestage = False
             , cnt = 0
@@ -140,36 +386,41 @@ start ctx dofrags wbs0 =
             , cntTime = 0
             , cntPar = 0
             , cntPause = Defs.ticrate
-            , dofrags = dofrags
+            , dofrags = carried.dofrags
             , dmFrags = Array.repeat Defs.maxPlayers zeros
             , dmTotals = zeros
+            , anims = Array.empty
+            , pointerOn = carried.pointerOn
             }
+
+        initialised =
+            if ctx.deathmatch then
+                base
+
+            else if ctx.netgame then
+                let
+                    sum =
+                        players ctx |> List.foldl (\i acc -> acc + fragSum ctx wbs i) carried.dofrags
+                in
+                { base
+                    | dofrags =
+                        if sum /= 0 then
+                            1
+
+                        else
+                            0
+                }
+
+            else
+                { base
+                    | cntKills = Array.set 0 -1 zeros
+                    , cntItems = Array.set 0 -1 zeros
+                    , cntSecret = Array.set 0 -1 zeros
+                    , cntTime = -1
+                    , cntPar = -1
+                }
     in
-    if ctx.deathmatch then
-        base
-
-    else if ctx.netgame then
-        let
-            sum =
-                players ctx |> List.foldl (\i acc -> acc + fragSum ctx wbs i) dofrags
-        in
-        { base
-            | dofrags =
-                if sum /= 0 then
-                    1
-
-                else
-                    0
-        }
-
-    else
-        { base
-            | cntKills = Array.set 0 -1 zeros
-            , cntItems = Array.set 0 -1 zeros
-            , cntSecret = Array.set 0 -1 zeros
-            , cntTime = -1
-            , cntPar = -1
-        }
+    initAnimatedBack initialised world
 
 
 atLeastOne : Int -> Int
@@ -203,7 +454,8 @@ plyr i wbs =
     Array.get i wbs.plyr |> Maybe.withDefault { in_ = False, skills = 0, sitems = 0, ssecret = 0, stime = 0, frags = Array.repeat Defs.maxPlayers 0 }
 
 
-{-| WI\_fragSum.
+{-| WI\_fragSum: a player's frags of the others, less the times they killed
+themselves.
 -}
 fragSum : Context -> WbStart -> Int -> Int
 fragSum ctx wbs n =
@@ -215,20 +467,31 @@ fragSum ctx wbs n =
         - get n p.frags
 
 
+
+-- TICKING
+
+
 {-| WI\_Ticker: one tic, given the world (for the players' buttons and their
-`attackdown`/`usedown`, which WI\_checkForAccelerate updates, and for sounds).
+`attackdown`/`usedown`, which WI\_checkForAccelerate updates, for M\_Random, and for
+sounds).
 -}
 ticker : Context -> World -> Intermission -> ( Intermission, World, Outcome )
 ticker ctx world0 wi0 =
     let
-        ( accelerate, world ) =
+        ( accelerate, world1 ) =
             checkForAccelerate ctx world0
 
-        wi =
+        wi1 =
             { wi0
                 | bcnt = wi0.bcnt + 1
                 , acceleratestage = wi0.acceleratestage || accelerate
             }
+
+        ( wi, rng ) =
+            updateAnimatedBack wi1 world1.rng
+
+        world =
+            { world1 | rng = rng }
     in
     case wi.stage of
         StatCount ->
@@ -242,8 +505,20 @@ ticker ctx world0 wi0 =
 
                     else
                         updateStats ctx wi
+
+                played =
+                    playAll sounds world
             in
-            ( next, playAll sounds world, Continue )
+            if next.stage == ShowNextLoc then
+                -- WI_initShowNextLoc restarts the animations
+                let
+                    ( shown, w ) =
+                        initAnimatedBack next played
+                in
+                ( shown, w, Continue )
+
+            else
+                ( next, played, Continue )
 
         ShowNextLoc ->
             let
@@ -254,7 +529,7 @@ ticker ctx world0 wi0 =
                 ( initNoState wi, world, Continue )
 
             else
-                ( { wi | cnt = cnt }, world, Continue )
+                ( { wi | cnt = cnt, pointerOn = Bitwise.and cnt 31 < 20 }, world, Continue )
 
         NoState ->
             let
@@ -299,9 +574,12 @@ checkForAccelerate ctx world =
             ( False, world )
 
 
+{-| WI\_initNoState. WI\_drawNoState turns the arrow on for good before it draws, so
+it is on from here.
+-}
 initNoState : Intermission -> Intermission
 initNoState wi =
-    { wi | stage = NoState, acceleratestage = False, cnt = 10 }
+    { wi | stage = NoState, acceleratestage = False, cnt = 10, pointerOn = True }
 
 
 initShowNextLoc : Intermission -> Intermission

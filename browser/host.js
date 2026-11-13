@@ -117,22 +117,11 @@ export class Screen {
     return lut;
   }
 
-  // pixels: 64000 palette indices (an array of numbers or a typed array), or
-  // 16000 numbers each packing four of them, the first in the low byte
+  // pixels: 64000 palette indices, an array of numbers or a typed array
   draw(pixels, palette, gamma) {
     const lut = this.lut(palette, gamma);
     const rgba = this.rgba;
-    if (pixels.length === 16000) {
-      for (let i = 0, o = 0; i < 16000; i++, o += 4) {
-        const w = pixels[i];
-        rgba[o] = lut[w & 0xff];
-        rgba[o + 1] = lut[(w >>> 8) & 0xff];
-        rgba[o + 2] = lut[(w >>> 16) & 0xff];
-        rgba[o + 3] = lut[w >>> 24];
-      }
-    } else {
-      for (let i = 0; i < 64000; i++) rgba[i] = lut[pixels[i]];
-    }
+    for (let i = 0; i < 64000; i++) rgba[i] = lut[pixels[i]];
     this.ctx.putImageData(this.image, 0, 0);
   }
 }
@@ -409,6 +398,6 @@ export function run(app, canvas, buffer, status) {
   }
   attachInput(canvas, (e) => app.ports.event.send(e), () => audio.start());
   app.ports.wad.send(new File([buffer], 'doom.wad'));
-  window.doomHost = { wad, screen, audio };
+  window.doomHost = { app, wad, screen, audio };
   return window.doomHost;
 }

@@ -2,7 +2,7 @@ module Doom.Video exposing
     ( Framebuffer, Patch, width, height
     , blank, patch, patchSize
     , drawPatch, drawPatchFlipped, drawPatchTranslated, tileFlat, fill, plot, copyRect
-    , pixel, toBytes, fromBytes
+    , pixel, toBytes, fromBytes, toArray
     )
 
 {-| The screen and drawing on it (v\_video.c): a 320 × 200 framebuffer of palette
@@ -16,7 +16,7 @@ Drawing clips to the screen where the original would stop with "Bad V\_DrawPatch
 @docs Framebuffer, Patch, width, height
 @docs blank, patch, patchSize
 @docs drawPatch, drawPatchFlipped, drawPatchTranslated, tileFlat, fill, plot, copyRect
-@docs pixel, toBytes, fromBytes
+@docs pixel, toBytes, fromBytes, toArray
 
 -}
 
@@ -344,6 +344,15 @@ pixel x y (Framebuffer px) =
 toBytes : Framebuffer -> Bytes
 toBytes (Framebuffer px) =
     E.encode (E.sequence (Array.foldr (\c acc -> E.unsignedInt8 c :: acc) [] px))
+
+
+{-| The screen's 64000 palette indices, row by row from the top left, as they are
+kept: the quickest way to hand a frame to a host (a browser's port encodes an
+`Array Int` straight into a JavaScript array).
+-}
+toArray : Framebuffer -> Array Int
+toArray (Framebuffer px) =
+    px
 
 
 {-| A screen from 64000 bytes.

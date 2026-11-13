@@ -7,8 +7,7 @@ commands (with the music already decoded from MUS), and the player's input.
 
 -}
 
-import Bytes exposing (Endianness(..))
-import Bytes.Decode as D
+import Bytes
 import Doom.Audio exposing (Command(..))
 import Doom.Audio.Midi as Midi
 import Doom.Audio.Mus as Mus
@@ -20,9 +19,9 @@ import Json.Decode
 import Json.Encode as E
 
 
-{-| A frame for `host.js`'s `frame` port: the pixels as 16000 numbers of four
-palette indices each (the first in the low byte), which crosses the port much faster
-than 64000 separate numbers would.
+{-| A frame for `host.js`'s `frame` port: the 64000 palette indices as a JavaScript
+array (`Doom.Video.toArray`, encoded element by element: about a millisecond, where
+going through `Doom.Video.toBytes` took six).
 -}
 encodeFrame : Framebuffer -> Int -> Int -> E.Value
 encodeFrame pixels palette gamma =
@@ -42,19 +41,7 @@ encodeScreen screen =
 
 packed : Framebuffer -> E.Value
 packed pixels =
-    Video.toBytes pixels
-        |> D.decode (D.loop ( 16000, [] ) word)
-        |> Maybe.withDefault []
-        |> E.list E.int
-
-
-word : ( Int, List Int ) -> D.Decoder (D.Step ( Int, List Int ) (List Int))
-word ( left, acc ) =
-    if left <= 0 then
-        D.succeed (D.Done (List.reverse acc))
-
-    else
-        D.map (\w -> D.Loop ( left - 1, w :: acc )) (D.unsignedInt32 LE)
+    E.array E.int (Video.toArray pixels)
 
 
 {-| Audio commands for the `audio` port. `PlayMusic` carries the song, decoded

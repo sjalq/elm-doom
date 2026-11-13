@@ -2,7 +2,6 @@ module AudioTests exposing (suite)
 
 import Bytes exposing (Bytes, Endianness(..))
 import Bytes.Encode as E
-import Doom.Audio.Midi as Midi
 import Doom.Audio.Mus as Mus exposing (Controller(..), Event(..))
 import Doom.Audio.Sound as Sound
 import Doom.Defs exposing (GameMode(..))
@@ -16,7 +15,6 @@ suite : Test
 suite =
     describe "audio"
         [ musTests
-        , midiTests
         , musicChoice
         , test "pitch draws: every sound but itemup and tink" <|
             \_ ->
@@ -102,69 +100,6 @@ musTests =
                     |> Mus.decode
                     |> Maybe.map Mus.toInts
                     |> Expect.equal (Just [ 2, 0, 128, 0, 0, 6, 0, 0, 0, 0 ])
-        ]
-
-
-be32 : Int -> List Int
-be32 n =
-    [ n // 16777216, modBy 256 (n // 65536), modBy 256 (n // 256), modBy 256 n ]
-
-
-midiTests : Test
-midiTests =
-    describe "MIDI"
-        [ test "a format-0 file: tempo, running status, percussion channel, times at 140 Hz" <|
-            \_ ->
-                let
-                    -- 96 ticks a quarter; tempo 500000 us a quarter (120 bpm)
-                    track =
-                        [ 0x00
-                        , 0xFF
-                        , 0x51
-                        , 0x03
-                        , 0x07
-                        , 0xA1
-                        , 0x20 -- tempo
-                        , 0x00
-                        , 0x99
-                        , 0x24
-                        , 0x7F -- note on, MIDI channel 10 (percussion)
-                        , 0x60
-                        , 0x24
-                        , 0x00 -- a quarter later (0.5 s), running status, velocity 0: off
-                        , 0x00
-                        , 0xB0
-                        , 0x07
-                        , 0x50 -- channel 1 volume 80
-                        , 0x00
-                        , 0xFF
-                        , 0x2F
-                        , 0x00
-                        ]
-
-                    file =
-                        [ 0x4D, 0x54, 0x68, 0x64 ]
-                            ++ be32 6
-                            ++ [ 0, 0, 0, 1, 0, 96 ]
-                            ++ [ 0x4D, 0x54, 0x72, 0x6B ]
-                            ++ be32 (List.length track)
-                            ++ track
-                in
-                bytes file
-                    |> Midi.decode
-                    |> Maybe.map .events
-                    |> Expect.equal
-                        (Just
-                            [ { event = PlayNote 15 36 (Just 127), delay = 70 }
-                            , { event = ReleaseNote 15 36, delay = 0 }
-                            , { event = Controller 0 Volume 80, delay = 0 }
-                            , { event = ScoreEnd, delay = 0 }
-                            ]
-                        )
-        , test "recognised by its header" <|
-            \_ ->
-                ( Midi.isMidi (bytes [ 0x4D, 0x54, 0x68, 0x64, 0 ]), Midi.isMidi (bytes [ 0x4D, 0x55, 0x53, 0x1A ]) )
-                    |> Expect.equal ( True, False )
         ]
 
 

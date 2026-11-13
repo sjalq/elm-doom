@@ -142,6 +142,7 @@ export class Audio {
     this.channels = [];
     this.music = null;
     this.pendingMusic = null; // the song asked for before audio could start
+    this.pausedMusic = false;
     this.musicVolume = 64;
     this.sfxVolume = 64;
     this.pitchShift = /[?&]pitch\b/.test(location.search);
@@ -164,32 +165,36 @@ export class Audio {
       if (genmidi) this.music.port.postMessage({ type: 'genmidi', buffer: genmidi.slice().buffer });
       this.music.port.postMessage({ type: 'volume', value: this.musicVolume });
       if (this.pendingMusic) this.music.port.postMessage(this.pendingMusic);
+      if (this.pendingMusic && this.pausedMusic) this.music.port.postMessage({ type: 'pause' });
     } catch (err) {
       console.error('music unavailable:', err);
     }
   }
 
-  // a DMX sound lump: format 3, the rate, the sample count, then 8-bit unsigned
-  // samples (the 16 padding bytes each end included, as Doom plays them)
+  // a DMX sound lump as Chocolate Doom's i_sdlsound.c reads it: format 3, the
+  // rate, the sample count, then 8-bit unsigned samples, of which DMX skips the
+  // first and last 16; a lump that isn't like that plays nothing. Samples become
+  // 16-bit as SDL's 8-to-16 conversion does (s * 257 - 32768).
   buffer(name) {
     let b = this.buffers.get(name);
     if (b === undefined) {
       b = null;
       const lump = this.wad.lump(name);
-      if (lump && lump.length > 8) {
-        const view = new DataView(lump.buffer, lump.byteOffset, lump.byteLength);
-        const rate = view.getUint16(2, true) || 11025;
-        const count = Math.min(view.getUint32(4, true), lump.length - 8);
-        if (count > 0) {
+      if (lump && lump.length >= 8 && lump[0] === 0x03 && lump[1] === 0x00) {
+        const rate = lump[2] | (lump[3] << 8);
+        const length = (lump[4] | (lump[5] << 8) | (lump[6] << 16) | (lump[7] << 24)) >>> 0;
+        if (length <= lump.length - 8 && length > 48 && rate > 0) {
+          const count = length - 32;
           b = this.ctx.createBuffer(1, count, rate);
           const data = b.getChannelData(0);
-          for (let i = 0; i < count; i++) data[i] = (lump[8 + i] - 128) / 128;
+          for (let i = 0; i < count; i++) data[i] = (lump[8 + 16 + i] * 257 - 32768) / 32768;
         }
       }
       this.buffers.set(name, b);
     }
     return b;
   }
+
 
   stopChannel(n) {
     const ch = this.channels[n];
@@ -200,16 +205,15 @@ export class Audio {
     }
   }
 
-  // addsfx's stereo: separation 0..255 (128 the middle) and volume 0..127 to left
-  // and right volumes 0..127
+  // Chocolate Doom's I_SDL_UpdateSoundParams: volume 0..127 and separation
+  // (128 the middle) to SDL_mixer's left and right panning levels, 0..255
   static gains(volume, separation) {
     const vol = Math.max(0, Math.min(127, volume));
-    let sep = separation + 1;
-    const left = vol - ((vol * sep * sep) >> 16);
-    sep -= 257;
-    const right = vol - ((vol * sep * sep) >> 16);
-    return [Math.max(0, left) / 127, Math.max(0, right) / 127];
+    const left = Math.max(0, Math.min(255, Math.trunc(((254 - separation) * vol) / 127)));
+    const right = Math.max(0, Math.min(255, Math.trunc((separation * vol) / 127)));
+    return [left / 255, right / 255];
   }
+
 
   // I_SetChannels's steptable: pitch 128 is normal speed, 64 steps an octave. DOS
   // Doom v1.9's DMX ignored the pitch (s_sound.c still draws it from M_Random), so
@@ -257,7 +261,16 @@ export class Audio {
   musicMessage(m) {
     if (m.type === 'play') this.pendingMusic = m;
     else if (m.type === 'stop') this.pendingMusic = null;
+    if (m.type === 'pause') this.pausedMusic = true;
+    else if (m.type === 'resume' || m.type === 'play') this.pausedMusic = false;
     if (this.music) this.music.port.postMessage(m);
+  }
+
+  // the music lump's bytes, for the worklet to register (MUS or MIDI)
+  playMusic(lump, looping) {
+    const bytes = this.wad.lump(lump);
+    if (!bytes) return;
+    this.musicMessage({ type: 'play', buffer: bytes.slice().buffer, looping });
   }
 
   // one of Doom.Audio.Command, as the Elm host encodes it
@@ -266,12 +279,12 @@ export class Audio {
       case 'start': this.startSound(c); break;
       case 'update': this.updateSound(c); break;
       case 'stop': this.stopChannel(c.channel); break;
-      case 'music': this.musicMessage({ type: 'play', events: c.events, looping: c.looping }); break;
+      case 'music': this.playMusic(c.lump, c.looping); break;
       case 'musicstop': this.musicMessage({ type: 'stop' }); break;
       case 'musicpause': this.musicMessage({ type: 'pause' }); break;
       case 'musicresume': this.musicMessage({ type: 'resume' }); break;
       case 'musicvolume':
-        // DMX's 0..127 (S_SetMusicVolume sends 127 first, then the setting)
+        // I_SetMusicVolume's 0..127 (linuxdoom's S_SetMusicVolume sends 127 first)
         this.musicVolume = Math.max(0, Math.min(127, c.value));
         this.musicMessage({ type: 'volume', value: this.musicVolume });
         break;

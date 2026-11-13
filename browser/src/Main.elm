@@ -190,7 +190,7 @@ step msg game =
                 []
 
         storeGames =
-            if savedGames /= game.savedGames then
+            if shape savedGames /= shape game.savedGames then
                 List.range 0 5
                     |> List.filterMap
                         (\slot ->
@@ -198,7 +198,7 @@ step msg game =
                                 now =
                                     Dict.get slot savedGames
                             in
-                            if now /= Dict.get slot game.savedGames then
+                            if Maybe.map Bytes.width now /= Maybe.map Bytes.width (Dict.get slot game.savedGames) then
                                 Just (store { key = "save" ++ String.fromInt slot, value = Maybe.map Base64.fromBytes now })
 
                             else
@@ -220,6 +220,15 @@ sounds doom commands =
 
     else
         audio (Host.encodeCommands (Doom.wad doom) commands)
+
+
+{-| Which slots hold a game, and how long each is. (Elm's `==` can't compare `Bytes`:
+it finds two different ones equal, so a game saved over another of the same length
+isn't noticed.)
+-}
+shape : Dict Int Bytes -> List ( Int, Int )
+shape games =
+    Dict.toList games |> List.map (Tuple.mapSecond Bytes.width)
 
 
 encodeSettings : Settings -> E.Value

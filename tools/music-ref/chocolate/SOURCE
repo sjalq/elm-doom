@@ -1,0 +1,3 @@
+This directory holds unmodified copies of the files of Chocolate Doom (https://github.com/chocolate-doom/chocolate-doom,
+commit a2dfd51fcc00d272dc8a17a97ccd6683333ff4ea) that its OPL music uses, GPL-2.0-or-later
+(opl3.c, opl3.h and wf_rom.h: Nuked OPL3, LGPL-2.1-or-later). ../shim stands in for SDL and the engine.

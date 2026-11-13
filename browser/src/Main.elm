@@ -186,7 +186,7 @@ step msg game =
             else
                 []
 
-        -- a game was saved (Elm can't compare Bytes, so the slots aren't compared)
+        -- a game was saved (Elm can't compare Bytes, so the game counts its saves)
         storeGames =
             if Doom.saveCount doom /= game.saveCount then
                 Doom.savedGames doom

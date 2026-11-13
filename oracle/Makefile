@@ -47,6 +47,8 @@
 #    (m_bbox.h, w_wad.c, r_data.c).
 #  - savegames: written and read field by field in the 32-bit layout
 #    (p_saveg.c).
+#  - DOS v1.9 over linuxdoom: sound volumes are the menu value * 8, the
+#    menu keeps its own 0..15 variables (m_menu.c, m_misc.c, d_main.c).
 #  - memory the original read without defining it, made canonical: Z_Malloc
 #    returns zeroed blocks (z_zone.c); cached lumps and composite textures
 #    have 256 zero bytes past their end, which R_DrawColumn's &127 can

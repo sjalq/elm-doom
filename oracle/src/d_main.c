@@ -8,6 +8,7 @@
 //    iteration and count iterations. Otherwise (tic-hash mode) the original
 //    -singletics loop without display, sound or real-time calls: the same
 //    G_Ticker sequence, one tic per iteration.
+//  - S_Init gets the menu volumes * 8, as in DOS v1.9.
 //  - statcopy cast through intptr_t (64-bit pointer size; never used).
 
 // Emacs style mode select   -*- C++ -*- 
@@ -1182,7 +1183,11 @@ void D_DoomMain (void)
     D_CheckNetGame ();
 
     printf ("S_Init: Setting up sound.\n");
-    S_Init (snd_SfxVolume /* *8 */, snd_MusicVolume /* *8*/ );
+    // DOOM-ORACLE: DOS v1.9's * 8 (linuxdoom commented it out)
+    {
+	extern int sfxVolume, musicVolume;	// m_menu.c
+	S_Init (sfxVolume * 8, musicVolume * 8);
+    }
 
     printf ("HU_Init: Setting up heads up display.\n");
     HU_Init ();

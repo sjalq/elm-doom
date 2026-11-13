@@ -9,8 +9,6 @@ commands (with the music already decoded from MUS), and the player's input.
 
 import Bytes
 import Doom.Audio exposing (Command(..))
-import Doom.Audio.Midi as Midi
-import Doom.Audio.Mus as Mus
 import Doom.Event as Event
 import Doom.Screen exposing (Screen)
 import Doom.Video as Video exposing (Framebuffer)
@@ -44,16 +42,16 @@ packed pixels =
     E.array (E.array E.int) (Video.columns pixels)
 
 
-{-| Audio commands for the `audio` port. `PlayMusic` carries the song, decoded
-from the WAD's MUS (or MIDI) lump (`Doom.Audio.Mus.toInts`), for the OPL player.
+{-| Audio commands for the `audio` port. `host.js` finds the lumps (sounds and
+music) in its own copy of the WAD.
 -}
 encodeCommands : Wad -> List Command -> E.Value
-encodeCommands wad commands =
-    E.list (encodeCommand wad) commands
+encodeCommands _ commands =
+    E.list encodeCommand commands
 
 
-encodeCommand : Wad -> Command -> E.Value
-encodeCommand wad command =
+encodeCommand : Command -> E.Value
+encodeCommand command =
     case command of
         StartSound c ->
             E.object
@@ -82,13 +80,6 @@ encodeCommand wad command =
                 [ ( "cmd", E.string "music" )
                 , ( "lump", E.string m.lump )
                 , ( "looping", E.bool m.looping )
-                , ( "events"
-                  , Wad.lump m.lump wad
-                        |> Maybe.andThen song
-                        |> Maybe.map Mus.toInts
-                        |> Maybe.withDefault []
-                        |> E.list E.int
-                  )
                 ]
 
         StopMusic ->
@@ -105,17 +96,6 @@ encodeCommand wad command =
 
         SfxVolume v ->
             E.object [ ( "cmd", E.string "sfxvolume" ), ( "value", E.int v ) ]
-
-
-{-| A music lump: MUS, or a MIDI file (as some WADs, Freedoom's, have).
--}
-song : Bytes.Bytes -> Maybe Mus.Song
-song bytes =
-    if Midi.isMidi bytes then
-        Midi.decode bytes
-
-    else
-        Mus.decode bytes
 
 
 {-| One of `host.js`'s input events: `{kind, data1, data2, data3}` with `kind` one

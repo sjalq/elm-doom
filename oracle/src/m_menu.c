@@ -1,6 +1,17 @@
-// DOOM-ORACLE changes to this linuxdoom-1.10 file (search for DOOM-ORACLE below):
-// DOS behaviour (see chocolate-doom m_menu.c): the Read This! pages, the quit
-// messages, the working detail toggle and the keys that type nothing.
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - Sound volumes as in DOS v1.9: the menu works on sfxVolume /
+//    musicVolume (0..15) and hands S_SetSfxVolume / S_SetMusicVolume
+//    8 times that; linuxdoom had commented out the * 8 and used
+//    s_sound.c's variables for the menu.
+//  - M_Drawer's line buffer is 256 bytes instead of 40: two quit messages
+//    (endmsg[7], endmsg[13], 52 and 47 characters on one line) overflowed
+//    it, writing over the stack (undefined behaviour; a crash here). The
+//    whole line is drawn, which is what the overflowing copy left in the
+//    buffer for M_WriteText in the original.
+//  - DOS behaviour (see chocolate-doom m_menu.c): the Read This! pages, the
+//    quit messages, the working detail toggle and the keys that type nothing.
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -77,6 +88,11 @@ extern boolean		chat_on;		// in heads-up code
 // defaulted values
 //
 int			mouseSensitivity;       // has default
+
+// DOOM-ORACLE: the menu/config volumes 0..15, as in DOS v1.9; s_sound.c's
+// snd_SfxVolume / snd_MusicVolume get 8 times these (0..120).
+int			sfxVolume;		// has default
+int			musicVolume;		// has default
 
 // Show messages has default, 0 = off, 1 = on
 int			showMessages;
@@ -783,10 +799,10 @@ void M_DrawSound(void)
     V_DrawPatchDirect (60,38,0,W_CacheLumpName("M_SVOL",PU_CACHE));
 
     M_DrawThermo(SoundDef.x,SoundDef.y+LINEHEIGHT*(sfx_vol+1),
-		 16,snd_SfxVolume);
+		 16,sfxVolume);
 
     M_DrawThermo(SoundDef.x,SoundDef.y+LINEHEIGHT*(music_vol+1),
-		 16,snd_MusicVolume);
+		 16,musicVolume);
 }
 
 void M_Sound(int choice)
@@ -799,16 +815,16 @@ void M_SfxVol(int choice)
     switch(choice)
     {
       case 0:
-	if (snd_SfxVolume)
-	    snd_SfxVolume--;
+	if (sfxVolume)
+	    sfxVolume--;
 	break;
       case 1:
-	if (snd_SfxVolume < 15)
-	    snd_SfxVolume++;
+	if (sfxVolume < 15)
+	    sfxVolume++;
 	break;
     }
 	
-    S_SetSfxVolume(snd_SfxVolume /* *8 */);
+    S_SetSfxVolume(sfxVolume * 8);	// DOOM-ORACLE: DOS * 8
 }
 
 void M_MusicVol(int choice)
@@ -816,16 +832,16 @@ void M_MusicVol(int choice)
     switch(choice)
     {
       case 0:
-	if (snd_MusicVolume)
-	    snd_MusicVolume--;
+	if (musicVolume)
+	    musicVolume--;
 	break;
       case 1:
-	if (snd_MusicVolume < 15)
-	    snd_MusicVolume++;
+	if (musicVolume < 15)
+	    musicVolume++;
 	break;
     }
 	
-    S_SetMusicVolume(snd_MusicVolume /* *8 */);
+    S_SetMusicVolume(musicVolume * 8);	// DOOM-ORACLE: DOS * 8
 }
 
 
@@ -1746,7 +1762,7 @@ void M_Drawer (void)
     static short	y;
     short		i;
     short		max;
-    char		string[40];
+    char		string[256];	// DOOM-ORACLE: was 40, see the top of the file
     int			start;
 
     inhelpscreens = false;
@@ -1762,7 +1778,7 @@ void M_Drawer (void)
 	    for (i = 0;i < strlen(messageString+start);i++)
 		if (*(messageString+start+i) == '\n')
 		{
-		    memset(string,0,40);
+		    memset(string,0,sizeof(string));	// DOOM-ORACLE: was 40
 		    strncpy(string,messageString+start,i);
 		    start += i+1;
 		    break;

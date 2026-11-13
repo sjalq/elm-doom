@@ -4,6 +4,8 @@
 //    M_LoadDefaults only applies the built-in defaults, never a config
 //    file. Defaults are keys, mouse, volumes, screen size, chat macros:
 //    none is play state.
+//  - sfx_volume / music_volume are the menu volumes (m_menu.c
+//    sfxVolume, musicVolume) as in DOS v1.9.
 //  - -set <name> <value> overrides a built-in default (as a config file
 //    line would).
 
@@ -210,6 +212,8 @@ extern int	showMessages;
 extern int	detailLevel;
 
 extern int	screenblocks;
+extern int	sfxVolume;	// DOOM-ORACLE: m_menu.c
+extern int	musicVolume;
 
 extern int	showMessages;
 
@@ -244,8 +248,8 @@ typedef struct
 default_t	defaults[] =
 {
     {"mouse_sensitivity",&mouseSensitivity, 5},
-    {"sfx_volume",&snd_SfxVolume, 8},
-    {"music_volume",&snd_MusicVolume, 8},
+    {"sfx_volume",&sfxVolume, 8},	// DOOM-ORACLE: was &snd_SfxVolume
+    {"music_volume",&musicVolume, 8},	// DOOM-ORACLE: was &snd_MusicVolume
     {"show_messages",&showMessages, 1},
     
 

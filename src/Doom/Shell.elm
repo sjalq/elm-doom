@@ -974,8 +974,9 @@ gTicker cmd ( m0, acc0 ) =
             else
                 ( { m | game = after }, acc )
 
+        -- BTS_PAUSE's S_PauseSound and S_ResumeSound (and G_InitNew's S_ResumeSound)
         ( m2, acc2 ) =
-            if before.paused /= after.paused && (tic.ranLevel || not after.paused) then
+            if before.paused /= after.paused then
                 withSound
                     (if after.paused then
                         Sound.pauseSound

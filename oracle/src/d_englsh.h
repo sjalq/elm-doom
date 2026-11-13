@@ -63,7 +63,8 @@
 #define NETEND	"you can't end a netgame!\n\n"PRESSKEY
 #define ENDGAME	"are you sure you want to end the game?\n\n"PRESSYN
 
-#define DOSY		"(press y to quit)"
+// DOOM-ORACLE: DOS behaviour (see chocolate-doom d_englsh.h)
+#define DOSY		"(press y to quit to dos.)"
 
 #define DETAILHI	"High detail"
 #define DETAILLO	"Low detail"

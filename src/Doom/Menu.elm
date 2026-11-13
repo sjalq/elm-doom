@@ -1,7 +1,7 @@
 module Doom.Menu exposing
     ( Menu, Settings, defaultSettings, init, settings, setSettings, active, inHelpScreens, quickSaveSlot
     , Context, Effect(..), Response, responder, startControlPanel, ticker, drawer
-    , quitMessages
+    , quitMessages, doom2QuitMessages
     )
 
 {-| The menus (m\_menu.c): the main menu and everything under it, the messages that
@@ -14,7 +14,7 @@ view size), in the order the C source does them.
 
 @docs Menu, Settings, defaultSettings, init, settings, setSettings, active, inHelpScreens, quickSaveSlot
 @docs Context, Effect, Response, responder, startControlPanel, ticker, drawer
-@docs quitMessages
+@docs quitMessages, doom2QuitMessages
 
 -}
 
@@ -176,7 +176,17 @@ def mode loadStatus id =
                     , item 1 "M_OPTION" (Just OptionsR) 'o'
                     , item 1 "M_LOADG" (Just LoadGameR) 'l'
                     , item 1 "M_SAVEG" (Just SaveGameR) 's'
-                    , item 1 "M_RDTHIS" (Just ReadThisR) 'r'
+                    , item 1
+                        "M_RDTHIS"
+                        (Just
+                            (if mode == Retail then
+                                ReadThis2R
+
+                             else
+                                ReadThisR
+                            )
+                        )
+                        'r'
                     , item 1 "M_QUITG" (Just QuitDoomR) 'q'
                     ]
             in
@@ -262,7 +272,13 @@ def mode loadStatus id =
 
         ReadDef2 ->
             { items = Array.fromList [ { status = 1, name = "", routine = Just FinishReadThisR, alphaKey = 0 } ]
-            , prev = Just ReadDef1
+            , prev =
+                -- Ultimate Doom has one help page: backing out closes the menu
+                if mode == Retail then
+                    Nothing
+
+                else
+                    Just ReadDef1
             , draw = DrawReadThis2
             , x = 330
             , y = 175
@@ -317,6 +333,13 @@ def mode loadStatus id =
             , x = 80
             , y = 54
             }
+
+
+{-| KEY\_PAUSE, KEY\_CAPSLOCK, KEY\_SCRLCK and KEY\_NUMLOCK.
+-}
+nullKeys : List Int
+nullKeys =
+    [ Event.keyPause, Event.keyCapsLock, Event.keyScrollLock, Event.keyNumLock ]
 
 
 slots : Int
@@ -1174,8 +1197,17 @@ menuKey ctx ch s =
 
     else
         let
+            -- DOS gives keys that type nothing (Pause, Caps Lock, Scroll Lock, Num Lock)
+            -- the character 0, which finds the items without a hotkey
+            typed =
+                if List.member ch nullKeys then
+                    0
+
+                else
+                    ch
+
             matching from to =
-                List.range from to |> List.filter (\i -> (itemAt i).alphaKey == ch) |> List.head
+                List.range from to |> List.filter (\i -> (itemAt i).alphaKey == typed) |> List.head
         in
         case
             case matching (m.itemOn + 1) (count - 1) of
@@ -1379,12 +1411,26 @@ sizeDisplay choice s =
         |> emit SetViewSize
 
 
-{-| M\_ChangeDetail: linuxdoom only flips the setting (the low detail mode isn't
-there: "M\_ChangeDetail: low detail mode n.a.").
+{-| M\_ChangeDetail as DOS Doom does it (linuxdoom only flipped the setting):
+high or low detail, at once, with a message.
 -}
 changeDetail : Step -> Step
-changeDetail =
-    updateSettings (\st -> { st | detailLevel = 1 - st.detailLevel })
+changeDetail s =
+    let
+        s2 =
+            updateSettings (\st -> { st | detailLevel = 1 - st.detailLevel }) s
+    in
+    s2
+        |> emit SetViewSize
+        |> emit
+            (PlayerMessage
+                (if s2.m.settings.detailLevel == 0 then
+                    "High detail"
+
+                 else
+                    "Low detail"
+                )
+            )
 
 
 changeMessages : Step -> Step
@@ -1489,18 +1535,23 @@ endGame ctx s =
 quitDoom : Context -> Step -> Step
 quitDoom ctx s =
     let
+        messages =
+            if s.m.gameMode == Commercial then
+                doom2QuitMessages
+
+            else
+                quitMessages
+
         msg =
-            List.drop (modBy (numQuitMessages - 2) ctx.gametic + 1) quitMessages
+            List.drop (modBy (List.length messages) ctx.gametic) messages
                 |> List.head
                 |> Maybe.withDefault ""
     in
-    startMessage (msg ++ "\n\n(press y to quit)") (Just QuitResponse) True s
+    startMessage (msg ++ "\n\n(press y to quit to dos.)") (Just QuitResponse) True s
 
 
-{-| endmsg[]: the quit messages. Two commas missing in the C source join three pairs
-of them into one (the 7th with the 8th, the 14th with the 15th), so there are 21
-messages, the first only shown in other languages, plus two empty entries the random
-pick never reaches (it takes gametic modulo 20, plus 1).
+{-| The quit messages of DOS Doom v1.9 (one picked by gametic modulo 8; linuxdoom's
+longer list, with its missing commas, isn't what the DOS game shows).
 -}
 quitMessages : List String
 quitMessages =
@@ -1511,30 +1562,23 @@ quitMessages =
     , "you're trying to say you like dos\nbetter than me, right?"
     , "don't leave yet -- there's a\ndemon around that corner!"
     , "ya know, next time you come in here\ni'm gonna toast ya."
-    , "go ahead and leave. see if i care.you want to quit?\nthen, thou hast lost an eighth!"
+    , "go ahead and leave. see if i care."
+    ]
+
+
+{-| Doom II's.
+-}
+doom2QuitMessages : List String
+doom2QuitMessages =
+    [ "are you sure you want to\nquit this great game?"
+    , "you want to quit?\nthen, thou hast lost an eighth!"
     , "don't go now, there's a \ndimensional shambler waiting\nat the dos prompt!"
     , "get outta here and go back\nto your boring programs."
     , "if i were your boss, i'd \n deathmatch ya in a minute!"
     , "look, bud. you leave now\nand you forfeit your body count!"
     , "just leave. when you come\nback, i'll be waiting with a bat."
-    , "you're lucky i don't smack\nyou for thinking about leaving.fuck you, pussy!\nget the fuck out!"
-    , "you quit and i'll jizz\nin your cystholes!"
-    , "if you leave, i'll make\nthe lord drink my jizz."
-    , "hey, ron! can we say\n'fuck' in the game?"
-    , "i'd leave: this is just\nmore monsters and levels.\nwhat a load."
-    , "suck it down, asshole!\nyou're a fucking wimp!"
-    , "don't quit now! we're \nstill spending your money!"
-    , "THIS IS NO MESSAGE!\nPage intentionally left blank."
-    , ""
-    , ""
+    , "you're lucky i don't smack\nyou for thinking about leaving."
     ]
-
-
-{-| NUM\_QUITMESSAGES: the size the C source gives endmsg[] (one less than its 23 entries).
--}
-numQuitMessages : Int
-numQuitMessages =
-    22
 
 
 pressKey : String
@@ -1740,21 +1784,11 @@ drawRoutine gfx d m fb =
                     draw 0 0 "HELP" fb
 
                 _ ->
-                    draw 0 0 "HELP1" fb
+                    draw 0 0 "HELP2" fb
             )
 
         DrawReadThis2 ->
-            ( { m | inhelpscreens = True }
-            , case m.gameMode of
-                Retail ->
-                    draw 0 0 "CREDIT" fb
-
-                Commercial ->
-                    draw 0 0 "CREDIT" fb
-
-                _ ->
-                    draw 0 0 "HELP2" fb
-            )
+            ( { m | inhelpscreens = True }, draw 0 0 "HELP1" fb )
 
         DrawSound ->
             ( m

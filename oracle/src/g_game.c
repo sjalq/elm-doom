@@ -7,6 +7,8 @@
 //    64-bit layout is bigger than the 32-bit one SAVEGAMESIZE is for).
 //  - G_Ticker calls Oracle_SaveCheck first (does nothing without
 //    -savecheck; see oracle_savecheck.c).
+//  - G_Ticker's turbo message and G_InitNew's episode rules are DOS v1.9's
+//    (DOOM-ORACLE: DOS behaviour, see chocolate-doom g_game.c).
 //  - G_DoPlayDemo: accepts demo version 109 only, as DOS v1.9 does, and a demo
 //    already in memory (oracle_demodata: a demo file or ticcmd stream);
 //    a wrong version is an error instead of a silent hang.
@@ -202,7 +204,10 @@ fixed_t		angleturn[3] = {640, 1280, 320};	// + slow turn
  
 #define NUMKEYS		256 
 
-boolean         gamekeydown[NUMKEYS]; 
+boolean         gamekeydown[NUMKEYS];
+
+// DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_Ticker)
+boolean         turbodetected[MAXPLAYERS];
 int             turnheld;				// for accelerative turning 
  
 boolean		mousearray[4]; 
@@ -500,6 +505,7 @@ void G_DoLoadLevel (void)
     { 
 	if (playeringame[i] && players[i].playerstate == PST_DEAD) 
 	    players[i].playerstate = PST_REBORN; 
+	turbodetected[i] = false;	// DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_DoLoadLevel)
 	memset (players[i].frags,0,sizeof(players[i].frags)); 
     } 
 		 
@@ -694,13 +700,17 @@ void G_Ticker (void)
 		G_WriteDemoTiccmd (cmd);
 	    
 	    // check for turbo cheats
-	    if (cmd->forwardmove > TURBOTHRESHOLD 
-		&& !(gametic&31) && ((gametic>>5)&3) == i )
+	    // DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_Ticker):
+	    // remember a fast tic, tell it when the player's turn comes
+	    if (cmd->forwardmove > TURBOTHRESHOLD)
+		turbodetected[i] = true;
+	    if (!(gametic&31) && ((gametic>>5)&3) == i && turbodetected[i])
 	    {
 		static char turbomessage[80];
 		extern char *player_names[4];
 		sprintf (turbomessage, "%s is turbo!",player_names[i]);
 		players[consoleplayer].message = turbomessage;
+		turbodetected[i] = false;
 	    }
 			
 	    if (netgame && !netdemo && !(gametic%ticdup) ) 
@@ -1433,27 +1443,25 @@ G_InitNew
     // This was quite messy with SPECIAL and commented parts.
     // Supposedly hacks to make the latest edition work.
     // It might not work properly.
-    if (episode < 1)
-      episode = 1; 
-
-    if ( gamemode == retail )
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_InitNew):
+    // linuxdoom's clamp to the game's episodes isn't in the DOS executables.
+    // The Ultimate Doom takes episode 0 as 4; the others clamp to 1..3.
+    if (gamemode == retail)
     {
-      if (episode > 4)
-	episode = 4;
+	if (episode == 0)
+	    episode = 4;
     }
-    else if ( gamemode == shareware )
-    {
-      if (episode > 1) 
-	   episode = 1;	// only start episode 1 on shareware
-    }  
     else
     {
-      if (episode > 3)
-	episode = 3;
+	if (episode < 1)
+	    episode = 1;
+	if (episode > 3)
+	    episode = 3;
     }
-    
 
-  
+    if (episode > 1 && gamemode == shareware)
+	episode = 1;
+
     if (map < 1) 
 	map = 1;
     

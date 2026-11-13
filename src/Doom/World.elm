@@ -1,5 +1,6 @@
 module Doom.World exposing
     ( World, SectorState, LineState, SideState, Button, ButtonWhere(..), ItemRespawn, Exit(..)
+    , BlockmapHeader
     , Scratch, Divline, emptyScratch, maxButtons, itemQueSize
     , mobj, setMobj, updateMobj, mobjSector
     , sector, updateSector, lineState, updateLine, sideState, updateSide
@@ -7,7 +8,6 @@ module Doom.World exposing
     , addThinker, thinker, setThinker, removeThinker
     , pRandom, startSound, stopSound, buttonOrigin
     , nextValidcount, setScratch
-    , BlockmapHeader
     )
 
 {-| Everything about a level that changes while it is played: the thinkers and things,

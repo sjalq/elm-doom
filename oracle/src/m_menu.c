@@ -1,3 +1,6 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (search for DOOM-ORACLE below):
+// DOS behaviour (see chocolate-doom m_menu.c): the Read This! pages, the quit
+// messages, the working detail toggle and the keys that type nothing.
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -751,21 +754,12 @@ void M_QuickLoad(void)
 //
 void M_DrawReadThis1(void)
 {
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom m_menu.c:M_DrawReadThis1)
     inhelpscreens = true;
-    switch ( gamemode )
-    {
-      case commercial:
+    if (gamemode == commercial)
 	V_DrawPatchDirect (0,0,0,W_CacheLumpName("HELP",PU_CACHE));
-	break;
-      case shareware:
-      case registered:
-      case retail:
-	V_DrawPatchDirect (0,0,0,W_CacheLumpName("HELP1",PU_CACHE));
-	break;
-      default:
-	break;
-    }
-    return;
+    else
+	V_DrawPatchDirect (0,0,0,W_CacheLumpName("HELP2",PU_CACHE));
 }
 
 
@@ -775,22 +769,9 @@ void M_DrawReadThis1(void)
 //
 void M_DrawReadThis2(void)
 {
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom m_menu.c:M_DrawReadThis2)
     inhelpscreens = true;
-    switch ( gamemode )
-    {
-      case retail:
-      case commercial:
-	// This hack keeps us from having to change menus.
-	V_DrawPatchDirect (0,0,0,W_CacheLumpName("CREDIT",PU_CACHE));
-	break;
-      case shareware:
-      case registered:
-	V_DrawPatchDirect (0,0,0,W_CacheLumpName("HELP2",PU_CACHE));
-	break;
-      default:
-	break;
-    }
-    return;
+    V_DrawPatchDirect (0,0,0,W_CacheLumpName("HELP1",PU_CACHE));
 }
 
 
@@ -1095,15 +1076,37 @@ void M_QuitResponse(int ch)
 
 
 
+// DOOM-ORACLE: DOS behaviour (see chocolate-doom m_menu.c:M_SelectEndMessage,
+// dstrings.c): eight messages for each game, endmsg[gametic % 8].
+static char* dos_doom1_endmsg[8] =
+{
+  "are you sure you want to\nquit this great game?",
+  "please don't leave, there's more\ndemons to toast!",
+  "let's beat it -- this is turning\ninto a bloodbath!",
+  "i wouldn't leave if i were you.\ndos is much worse.",
+  "you're trying to say you like dos\nbetter than me, right?",
+  "don't leave yet -- there's a\ndemon around that corner!",
+  "ya know, next time you come in here\ni'm gonna toast ya.",
+  "go ahead and leave. see if i care."
+};
+
+static char* dos_doom2_endmsg[8] =
+{
+  "are you sure you want to\nquit this great game?",
+  "you want to quit?\nthen, thou hast lost an eighth!",
+  "don't go now, there's a \ndimensional shambler waiting\nat the dos prompt!",
+  "get outta here and go back\nto your boring programs.",
+  "if i were your boss, i'd \n deathmatch ya in a minute!",
+  "look, bud. you leave now\nand you forfeit your body count!",
+  "just leave. when you come\nback, i'll be waiting with a bat.",
+  "you're lucky i don't smack\nyou for thinking about leaving."
+};
+
 void M_QuitDOOM(int choice)
 {
-  // We pick index 0 which is language sensitive,
-  //  or one at random, between 1 and maximum number.
-  if (language != english )
-    sprintf(endstring,"%s\n\n"DOSY, endmsg[0] );
-  else
-    sprintf(endstring,"%s\n\n"DOSY, endmsg[ (gametic%(NUM_QUITMESSAGES-2))+1 ]);
-  
+  char** msgs = gamemode == commercial ? dos_doom2_endmsg : dos_doom1_endmsg;
+  sprintf(endstring,"%s\n\n"DOSY, msgs[gametic % 8]);
+
   M_StartMessage(endstring,M_QuitResponse,true);
 }
 
@@ -1130,20 +1133,16 @@ void M_ChangeSensitivity(int choice)
 
 void M_ChangeDetail(int choice)
 {
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom m_menu.c:M_ChangeDetail)
     choice = 0;
     detailLevel = 1 - detailLevel;
 
-    // FIXME - does not work. Remove anyway?
-    fprintf( stderr, "M_ChangeDetail: low detail mode n.a.\n");
-
-    return;
-    
-    /*R_SetViewSize (screenblocks, detailLevel);
+    R_SetViewSize (screenblocks, detailLevel);
 
     if (!detailLevel)
 	players[consoleplayer].message = DETAILHI;
     else
-	players[consoleplayer].message = DETAILLO;*/
+	players[consoleplayer].message = DETAILLO;
 }
 
 
@@ -1694,6 +1693,10 @@ boolean M_Responder (event_t* ev)
 	return true;
 	
       default:
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom m_menu.c:IsNullKey):
+	// Pause, Caps Lock, Scroll Lock and Num Lock type the character 0
+	if (ch == KEY_PAUSE || ch == 0x80+0x3a || ch == 0x80+0x46 || ch == 0x80+0x45)
+	    ch = 0;
 	for (i = itemOn+1;i < currentMenu->numitems;i++)
 	    if (currentMenu->menuitems[i].alphaKey == ch)
 	    {
@@ -1885,6 +1888,11 @@ void M_Init (void)
 	break;
       case retail:
 	// We are fine.
+	// DOOM-ORACLE: DOS behaviour (see chocolate-doom m_menu.c:M_Init):
+	// The Ultimate Doom's Read This! is one page
+	MainMenu[readthis].routine = M_ReadThis2;
+	ReadDef2.prevMenu = NULL;
+	break;
       default:
 	break;
     }

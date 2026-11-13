@@ -70,6 +70,7 @@ type alias Game =
     , demoplayback : Bool
     , singledemo : Bool
     , menuactive : Bool
+    , turbodetected : Array Bool
     , netdemo : Bool
     , state : GameState
     , action : GameAction
@@ -141,6 +142,7 @@ new wad data action =
     , demoplayback = False
     , singledemo = True
     , menuactive = False
+    , turbodetected = Array.repeat Defs.maxPlayers False
     , netdemo = False
     , state = DemoScreen
     , action = action
@@ -361,8 +363,13 @@ readCmds netcmds game =
                                             tic =
                                                 g.world.gametic
 
+                                            -- DOS v1.9: running too fast in any tic of the last 4
+                                            -- seconds or so is told when the player's turn comes
+                                            detected =
+                                                cmd.forwardmove > 0x32 || (Array.get i g.turbodetected |> Maybe.withDefault False)
+
                                             turbo =
-                                                cmd.forwardmove > 0x32 && modBy 32 tic == 0 && modBy 4 (tic // 32) == i
+                                                detected && modBy 32 tic == 0 && modBy 4 (tic // 32) == i
 
                                             withCmd =
                                                 World.updatePlayer i (\p -> { p | cmd = cmd }) g.world
@@ -376,7 +383,11 @@ readCmds netcmds game =
                                                 else
                                                     withCmd
                                         in
-                                        { g | world = withMessage, demo = demo }
+                                        { g
+                                            | world = withMessage
+                                            , demo = demo
+                                            , turbodetected = Array.set i (detected && not turbo) g.turbodetected
+                                        }
                                     )
                     )
         )
@@ -582,16 +593,27 @@ initNew skill episode0 map0 game =
         mode =
             game.params.gameMode
 
+        -- DOS v1.9 (linuxdoom's clamp to the game's episodes isn't in the DOS
+        -- executables): The Ultimate Doom takes episode 0 as 4 and leaves the
+        -- others as they are, the others clamp to 1 to 3; the shareware game only
+        -- has episode 1
+        episode1 =
+            if mode == Retail then
+                if episode0 == 0 then
+                    4
+
+                else
+                    episode0
+
+            else
+                clamp 1 3 episode0
+
         episode =
-            case mode of
-                Retail ->
-                    clamp 1 4 episode0
+            if episode1 > 1 && mode == Shareware then
+                1
 
-                Shareware ->
-                    clamp 1 1 episode0
-
-                _ ->
-                    clamp 1 3 episode0
+            else
+                episode1
 
         map =
             if mode /= Commercial then
@@ -662,7 +684,8 @@ doLoadLevel game =
 
         prepared =
             { game
-                | levelstarttic = world.gametic
+                | turbodetected = Array.repeat Defs.maxPlayers False
+                , levelstarttic = world.gametic
                 , state = Level
                 , action = NoAction
                 , paused = False

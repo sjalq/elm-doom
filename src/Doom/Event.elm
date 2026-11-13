@@ -3,6 +3,7 @@ module Doom.Event exposing
     , keyRightArrow, keyLeftArrow, keyUpArrow, keyDownArrow, keyEscape, keyEnter, keyTab
     , keyF1, keyF2, keyF3, keyF4, keyF5, keyF6, keyF7, keyF8, keyF9, keyF10, keyF11, keyF12
     , keyBackspace, keyPause, keyEquals, keyMinus, keyRShift, keyRCtrl, keyRAlt
+    , keyCapsLock, keyScrollLock, keyNumLock
     )
 
 {-| What the player does (event\_t, d\_event.h), as the game's responders see it:
@@ -16,6 +17,7 @@ keyboard events into these (in a browser: `KeyboardEvent.key`).
 @docs keyRightArrow, keyLeftArrow, keyUpArrow, keyDownArrow, keyEscape, keyEnter, keyTab
 @docs keyF1, keyF2, keyF3, keyF4, keyF5, keyF6, keyF7, keyF8, keyF9, keyF10, keyF11, keyF12
 @docs keyBackspace, keyPause, keyEquals, keyMinus, keyRShift, keyRCtrl, keyRAlt
+@docs keyCapsLock, keyScrollLock, keyNumLock
 
 -}
 
@@ -210,3 +212,24 @@ keyRCtrl =
 keyRAlt : Int
 keyRAlt =
     184
+
+
+{-| KEY\_CAPSLOCK (the DOS scan code 0x3a plus 0x80, as Chocolate Doom numbers it).
+-}
+keyCapsLock : Int
+keyCapsLock =
+    0xBA
+
+
+{-| KEY\_SCRLCK.
+-}
+keyScrollLock : Int
+keyScrollLock =
+    0xC6
+
+
+{-| KEY\_NUMLOCK.
+-}
+keyNumLock : Int
+keyNumLock =
+    0xC5

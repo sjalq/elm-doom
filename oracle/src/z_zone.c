@@ -3,6 +3,13 @@
 //  - Z_Malloc rounds sizes to 8 bytes instead of 4, so blocks holding
 //    64-bit pointers stay aligned (zone addresses never reach play).
 //  - Z_ChangeTag2 compares the owner pointer as uintptr_t (was unsigned).
+//  - Z_Malloc returns zeroed memory. The original returned whatever an
+//    earlier block left there; a few fields are never initialised by the
+//    game (e.g. plat_t.oldstatus until a platform is stopped) and only
+//    reach the savegame file, whose bytes would otherwise depend on the
+//    heap history (and differ between the two zones here). Anything that
+//    reads such memory sees 0, which is what a port that initialises
+//    everything sees too.
 //  - With -DORACLE_MALLOC_ZONE (make check only) a malloc-backed zone with
 //    the same owner/tag bookkeeping, so AddressSanitizer sees every block.
 
@@ -78,6 +85,7 @@ void* Z_Malloc (int size, int tag, void* user)
     }
     else
 	block->user = (void *)2;
+    memset (block + 1, 0, size);	// as the real zone below
     return (void *) (block + 1);
 }
 
@@ -385,6 +393,9 @@ Z_Malloc
     mainzone->rover = base->next;	
 	
     base->id = ZONEID;
+
+    // DOOM-ORACLE: new blocks read as zeroes (see the top of the file)
+    memset ((byte *)base + sizeof(memblock_t), 0, base->size - sizeof(memblock_t));
     
     return (void *) ((byte *)base + sizeof(memblock_t));
 }

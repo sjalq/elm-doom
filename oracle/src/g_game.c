@@ -3,6 +3,8 @@
 //  - G_DoPlayDemo: accepts demo version 109 (same format as 110) and a demo
 //    already in memory (oracle_demodata: a demo file or ticcmd stream);
 //    a wrong version is an error instead of a silent hang.
+//  - G_CheckSpot: the teleport fog offset of a start facing 180..315 is
+//    read from finetangent as the 32-bit original does (see there).
 //  - G_Ticker: calls Oracle_LevelTic (prints the state line) right after a
 //    P_Ticker that advanced leveltime; it only reads game state.
 
@@ -896,9 +898,18 @@ G_CheckSpot
     ss = R_PointInSubsector (x,y); 
     an = ( ANG45 * (mthing->angle/45) ) >> ANGLETOFINESHIFT; 
  
-    mo = P_SpawnMobj (x+20*finecosine[an], y+20*finesine[an] 
-		      , ss->sector->floorheight 
-		      , MT_TFOG); 
+    // DOOM-ORACLE: ANG45*(angle/45) overflows int for starts facing
+    // 180..315, so an is -4096..-1024 stored in an unsigned; on the 32-bit
+    // original finesine[an] wraps around the address space to
+    // finetangent[4096+an] (finetangent lies right before finesine), on
+    // 64-bit it is a wild read. Same values, read explicitly:
+    {
+	int ci = (int) an + FINEANGLES/4;
+	int si = (int) an;
+	fixed_t xa = ci < 0 ? finetangent[FINEANGLES/2 + ci] : finesine[ci];
+	fixed_t ya = si < 0 ? finetangent[FINEANGLES/2 + si] : finesine[si];
+	mo = P_SpawnMobj (x+20*xa, y+20*ya, ss->sector->floorheight, MT_TFOG);
+    }
 	 
     if (players[consoleplayer].viewz != 1) 
 	S_StartSound (mo, sfx_telept);	// don't start sound on first frame 

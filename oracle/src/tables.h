@@ -1,3 +1,8 @@
+// DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
+// for DOOM-ORACLE below). None of them changes how the game plays:
+//  - finetangent and finesine are the two halves of one array,
+//    oracle_finetrig, finetangent first (see tables.h).
+
 // Emacs style mode select   -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
@@ -54,15 +59,25 @@
 // 0x100000000 to 0x2000
 #define ANGLETOFINESHIFT	19		
 
+// DOOM-ORACLE: finetangent[4096] and finesine[10240] are one array,
+// finetangent first. That is how they lie in memory in the original
+// binary (tables.c defines them in that order), and the game relies on
+// it: R_ScaleFromGlobalAngle indexes finesine with a signed int shifted
+// right, i.e. with -4096..-1 for angles past ANG180, which reads
+// finetangent[0..4095]. A compiler is free to place two separate arrays
+// apart (AddressSanitizer does); one array keeps the original values.
+extern  fixed_t		oracle_finetrig[FINEANGLES/2 + 5*FINEANGLES/4];
+#define finetangent	(oracle_finetrig)
+
 // Effective size is 10240.
-extern  fixed_t		finesine[5*FINEANGLES/4];
+#define finesine	(oracle_finetrig + FINEANGLES/2)
 
 // Re-use data, is just PI/2 pahse shift.
 extern  fixed_t*	finecosine;
 
 
 // Effective size is 4096.
-extern fixed_t		finetangent[FINEANGLES/2];
+// DOOM-ORACLE: finetangent is defined above
 
 // Binary Angle Measument, BAM.
 #define ANG45			0x20000000

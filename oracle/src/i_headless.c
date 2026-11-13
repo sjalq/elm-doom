@@ -1,16 +1,20 @@
 // Headless platform layer for the doom-oracle (NOT part of linuxdoom-1.10).
 //
-// Replaces i_system.c, i_video.c, i_sound.c, i_net.c and s_sound.c with
-// stubs. None of these touch play state:
-//  - video: D_Display is never called, so nothing is drawn or blitted.
-//  - sound: s_sound.c only ever draws from M_Random (the menu/cosmetic RNG,
-//    rndindex), never P_Random (prndindex), and keeps no play state; the
-//    S_* entry points here do nothing.
+// Replaces i_system.c, i_video.c, i_sound.c and i_net.c. s_sound.c is the
+// real one (with logging hooks). None of this touches play state:
+//  - video: nothing is shown. I_FinishUpdate hands screens[0] to the -frames
+//    dump and I_SetPalette records which PLAYPAL palette was set
+//    (oracle_main.c). I_ReadScreen copies screens[0] as i_video.c does (the
+//    wipe reads back the frame just drawn).
+//  - sound: nothing is mixed. Every I_* call s_sound.c makes is logged
+//    (-soundlog) and I_SoundIsPlaying follows a fixed rule (below).
+//    s_sound.c only ever draws from M_Random (rndindex, menu/cosmetic),
+//    never P_Random (prndindex).
 //  - net: single player only, exactly the "no -net" branch of the original
 //    I_InitNetwork.
-//  - system: I_GetTime is a counter (only used for wipes/timedemo/net
-//    timing, none of which the oracle runs); I_Quit exits 0 without saving
-//    defaults; I_Error prints to stderr and exits 1.
+//  - system: I_GetTime is a counter that goes up by exactly 1 per call
+//    (see oracle_main.c for what that means for the wipe); I_Quit exits 0
+//    without saving defaults; I_Error prints to stderr and exits 1.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +31,9 @@
 #include "i_net.h"
 #include "s_sound.h"
 #include "sounds.h"
+#include "w_wad.h"
+#include "z_zone.h"
+#include "v_video.h"
 
 extern void Oracle_Flush (void);
 
@@ -36,7 +43,11 @@ extern void Oracle_Flush (void);
 // never affect play state (purged lumps are just reloaded).
 #define ORACLE_HEAPSIZE (64*1024*1024)
 
-void I_Init (void) {}
+// as i_system.c
+void I_Init (void)
+{
+    I_InitSound ();
+}
 
 byte* I_ZoneBase (int* size)
 {
@@ -44,6 +55,7 @@ byte* I_ZoneBase (int* size)
     return (byte *) malloc (*size);
 }
 
+// Deterministic time: 0, 1, 2, ... one more on every call.
 int I_GetTime (void)
 {
     static int t = 0;
@@ -84,61 +96,149 @@ void I_Error (char *error, ...)
 
 // ---------------------------------------------------------------- video
 
+extern void Oracle_FinishUpdate (void);		// oracle_main.c
+extern void Oracle_SetPalette (byte* palette);	// oracle_main.c
+
 void I_InitGraphics (void) {}
 void I_ShutdownGraphics (void) {}
-void I_SetPalette (byte* palette) {}
+void I_SetPalette (byte* palette) { Oracle_SetPalette (palette); }
 void I_UpdateNoBlit (void) {}
-void I_FinishUpdate (void) {}
+void I_FinishUpdate (void) { Oracle_FinishUpdate (); }
 void I_WaitVBL (int count) {}
-void I_ReadScreen (byte* scr) {}
+void I_ReadScreen (byte* scr)
+{
+    memcpy (scr, screens[0], SCREENWIDTH*SCREENHEIGHT);
+}
 void I_BeginRead (void) {}
 void I_EndRead (void) {}
 
 // ---------------------------------------------------------------- sound (i_sound.c)
+//
+// "Is playing" rule. I_StartSound at gametic T (the global gametic at the
+// moment of the call) of sfx S, whose sound lump L has sample rate R (u16
+// at lump offset 2) and sample count N (u32 at offset 4):
+//
+//     I_SoundIsPlaying (handle)  <=>  gametic < T + (N*35 + R-1) / R
+//
+// i.e. the sound lasts its sample length at 35 tics per second, rounded up
+// (R 0 counts as 1). I_StopSound ends it at once. L is the lump the
+// original mixer plays (i_sound.c getsfx): the link's lump for an alias
+// (chgun -> DSPISTOL), else "ds<name>", or DSPISTOL when that is missing.
+//
+// (The original linuxdoom I_SoundIsPlaying is "gametic < handle", handles
+// counting up from 100: a sound "stops" after a time that grows with the
+// number of sounds started so far. That is a placeholder, not kept.)
+
+extern int	oracle_snd_channel;			// s_sound.c
+extern void	Oracle_SoundLog (const char* fmt, ...);	// oracle_main.c
 
 FILE*	sndserver = 0;
 char*	sndserver_filename = "sndserver";
 int	mb_used = 2;
 
-void I_InitSound () {}
+static int	sfxlump[NUMSFX];	// lump the mixer would play
+static int	sfxtics[NUMSFX];	// its length in tics, rounded up
+
+#define MAXHANDLES	4096
+static int	handle_end[MAXHANDLES];	// gametic at which it stops
+static int	nexthandle = 0;
+
+void I_InitSound (void)
+{
+    int		i;
+    char	name[20];
+
+    for (i=1 ; i<NUMSFX ; i++)
+    {
+	sfxinfo_t*	sfx = S_sfx[i].link ? S_sfx[i].link : &S_sfx[i];
+	byte*		d;
+	int		rate, samples;
+
+	sprintf (name, "ds%s", sfx->name);
+	if (W_CheckNumForName (name) == -1)
+	    sfxlump[i] = W_GetNumForName ("dspistol");
+	else
+	    sfxlump[i] = W_GetNumForName (name);
+	d = W_CacheLumpNum (sfxlump[i], PU_STATIC);
+	rate = d[2] | (d[3] << 8);
+	samples = d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24);
+	if (rate <= 0)
+	    rate = 1;
+	sfxtics[i] = (int) (((long long) samples * TICRATE + rate - 1) / rate);
+	// like the original precache: s_sound.c only checks that it is set
+	S_sfx[i].data = d;
+    }
+}
+
 void I_UpdateSound (void) {}
 void I_SubmitSound (void) {}
 void I_ShutdownSound (void) {}
 void I_SetChannels () {}
-int  I_GetSfxLumpNum (sfxinfo_t* sfxinfo) { return 0; }
-int  I_StartSound (int id, int vol, int sep, int pitch, int priority) { return id; }
-void I_StopSound (int handle) {}
-int  I_SoundIsPlaying (int handle) { return 0; }
-void I_UpdateSoundParams (int handle, int vol, int sep, int pitch) {}
+
+// as i_sound.c
+int I_GetSfxLumpNum (sfxinfo_t* sfx)
+{
+    char namebuf[9];
+    sprintf (namebuf, "ds%s", sfx->name);
+    return W_GetNumForName (namebuf);
+}
+
+int I_StartSound (int id, int vol, int sep, int pitch, int priority)
+{
+    int	h = nexthandle++ % MAXHANDLES;
+    handle_end[h] = gametic + sfxtics[id];
+    Oracle_SoundLog ("start %d %.8s %d %d %d %d", oracle_snd_channel,
+		     lumpinfo[sfxlump[id]].name, vol, sep, pitch, priority);
+    return h;
+}
+
+void I_StopSound (int handle)
+{
+    Oracle_SoundLog ("stop %d", oracle_snd_channel);
+    handle_end[handle % MAXHANDLES] = gametic;
+}
+
+int I_SoundIsPlaying (int handle)
+{
+    return gametic < handle_end[handle % MAXHANDLES];
+}
+
+void I_UpdateSoundParams (int handle, int vol, int sep, int pitch)
+{
+    Oracle_SoundLog ("update %d %d %d %d", oracle_snd_channel, vol, sep, pitch);
+}
+
+// music: the lump is recognised by the data pointer s_sound.c registers
+// (it is W_CacheLumpNum's, so it is in lumpcache)
+static int	song_lump = -1;
+
 void I_InitMusic (void) {}
 void I_ShutdownMusic (void) {}
-void I_SetMusicVolume (int volume) {}
-void I_PauseSong (int handle) {}
-void I_ResumeSong (int handle) {}
-int  I_RegisterSong (void* data) { return 1; }
-void I_PlaySong (int handle, int looping) {}
-void I_StopSong (int handle) {}
+void I_SetMusicVolume (int volume) { Oracle_SoundLog ("musicvolume %d", volume); }
+void I_PauseSong (int handle) { Oracle_SoundLog ("musicpause"); }
+void I_ResumeSong (int handle) { Oracle_SoundLog ("musicresume"); }
+
+int I_RegisterSong (void* data)
+{
+    int i;
+    song_lump = -1;
+    for (i=0 ; i<numlumps ; i++)
+	if (lumpcache[i] == data)
+	{
+	    song_lump = i;
+	    break;
+	}
+    return 1;
+}
+
+void I_PlaySong (int handle, int looping)
+{
+    Oracle_SoundLog ("music %.8s %d",
+		     song_lump >= 0 ? lumpinfo[song_lump].name : "?", looping);
+}
+
+void I_StopSong (int handle) { Oracle_SoundLog ("musicstop"); }
 void I_UnRegisterSong (int handle) {}
-
-// ---------------------------------------------------------------- sound (s_sound.c)
-
-int snd_SfxVolume = 15;
-int snd_MusicVolume = 15;
-int numChannels;
-
-void S_Init (int sfxVolume, int musicVolume) {}
-void S_Start (void) {}
-void S_StartSound (void* origin, int sound_id) {}
-void S_StartSoundAtVolume (void* origin, int sound_id, int volume) {}
-void S_StopSound (void* origin) {}
-void S_StartMusic (int music_id) {}
-void S_ChangeMusic (int music_id, int looping) {}
-void S_StopMusic (void) {}
-void S_PauseSound (void) {}
-void S_ResumeSound (void) {}
-void S_UpdateSounds (void* listener) {}
-void S_SetMusicVolume (int volume) {}
-void S_SetSfxVolume (int volume) {}
 
 // ---------------------------------------------------------------- net
 

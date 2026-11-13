@@ -1,0 +1,58 @@
+# E2M3 (doom-oracle -full -warp 2 3 -skill 3): noclip (idspispopd) through
+# the wall into the corridor west of the exit, noclip off again, then walk
+# east across the walk-over exit line: intermission, then E2M4.
+# Mouse dx turns by dx*8 angle units (65536 = full circle) to the right.
+2 down 105
+2 up 105
+3 down 100
+3 up 100
+4 down 115
+4 up 115
+5 down 112
+5 up 112
+6 down 105
+6 up 105
+7 down 115
+7 up 115
+8 down 112
+8 up 112
+9 down 111
+9 up 111
+10 down 112
+10 up 112
+11 down 100
+11 up 100
+12 mouse 0 -1444 0
+15 down 173
+85 up 173
+125 down 105
+125 up 105
+126 down 100
+126 up 100
+127 down 115
+127 up 115
+128 down 112
+128 up 112
+129 down 105
+129 up 105
+130 down 115
+130 up 115
+131 down 112
+131 up 112
+132 down 111
+132 up 111
+133 down 112
+133 up 112
+134 down 100
+134 up 100
+136 mouse 0 3491 0
+140 down 173
+260 up 173
+# intermission: use (space) skips the tally, use again shows the episode
+# map, a third time goes on to E2M4
+300 down 32
+302 up 32
+380 down 32
+382 up 32
+470 down 32
+472 up 32

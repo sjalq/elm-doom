@@ -64,7 +64,20 @@
         "Doom.Render.Scene",
         "Doom.Render.Build",
         "Doom.Render.Raster",
-        "Doom.Render.Png"
+        "Doom.Render.Png",
+        "Doom.Event",
+        "Doom.Screen",
+        "Doom.Audio",
+        "Doom.Video",
+        "Doom.Render.Data",
+        "Doom.Render.View",
+        "Doom.Hud.StatusBar",
+        "Doom.Hud.Messages",
+        "Doom.Automap",
+        "Doom.Intermission.Draw",
+        "Doom.Finale",
+        "Doom.Save",
+        "Doom.Audio.Sound"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {

@@ -1212,16 +1212,17 @@ ticSounds gametic sounds ( m, acc ) =
         ( m, acc )
 
     else
-        case m.game.env of
-            Just env ->
+        case ( m.game.state, m.game.env ) of
+            ( Level, Just env ) ->
                 withSound (Sound.play gametic env m.game.world sounds) ( m, acc )
 
-            Nothing ->
+            _ ->
+                -- the intermission's and the finale's sounds have no origin
                 List.foldl
                     (\ev state ->
                         case ev of
                             Doom.Sound.Start _ sfx ->
-                                startSound sfx state
+                                withSound (Sound.startSound gametic sfx) state
 
                             _ ->
                                 state

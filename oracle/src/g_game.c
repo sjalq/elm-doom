@@ -1,10 +1,7 @@
 // DOOM-ORACLE changes to this linuxdoom-1.10 file (doom/oracle; search
 // for DOOM-ORACLE below). None of them changes how the game plays:
-//  - G_CheckSpot: the teleport fog's offset for starts facing 180..315
-//    degrees reads finetangent[] as the DOS executable does (vanilla reads
-//    out of bounds there; the 64-bit build would crash).
-//  - G_DoSaveGame: a 1 MB buffer of its own and that as the limit (the
-//    64-bit layout is bigger than the 32-bit one SAVEGAMESIZE is for).
+//  - G_DoSaveGame, G_DoLoadGame: the version string is "version 109", as
+//    the DOS v1.9 executable writes and checks (DOS behaviour).
 //  - G_Ticker calls Oracle_SaveCheck first (does nothing without
 //    -savecheck; see oracle_savecheck.c).
 //  - G_Ticker's turbo message and G_InitNew's episode rules are DOS v1.9's
@@ -1265,7 +1262,8 @@ void G_DoLoadGame (void)
     
     // skip the description field 
     memset (vcheck,0,sizeof(vcheck)); 
-    sprintf (vcheck,"version %i",VERSION); 
+    // DOOM-ORACLE: DOS behaviour: DOS v1.9 has VERSION 109.
+    sprintf (vcheck,"version %i",109); 
     if (strcmp (save_p, vcheck)) 
 	return;				// bad version 
     save_p += VERSIONSIZE; 
@@ -1334,20 +1332,13 @@ void G_DoSaveGame (void)
 	sprintf (name,SAVEGAMENAME"%d.dsg",savegameslot); 
     description = savedescription; 
 	 
-    // DOOM-ORACLE: a buffer of its own, big enough for the 64-bit layout
-    // (the original's screens[1]+0x4000 holds SAVEGAMESIZE bytes of the 32-bit
-    // one).
-    {
-	static byte* oracle_savebuffer;
-	if (!oracle_savebuffer)
-	    oracle_savebuffer = malloc (0x100000);
-	save_p = savebuffer = oracle_savebuffer;
-    }
+    save_p = savebuffer = screens[1]+0x4000; 
 	 
     memcpy (save_p, description, SAVESTRINGSIZE); 
     save_p += SAVESTRINGSIZE; 
     memset (name2,0,sizeof(name2)); 
-    sprintf (name2,"version %i",VERSION); 
+    // DOOM-ORACLE: DOS behaviour: DOS v1.9 has VERSION 109.
+    sprintf (name2,"version %i",109); 
     memcpy (save_p, name2, VERSIONSIZE); 
     save_p += VERSIONSIZE; 
 	 
@@ -1368,9 +1359,7 @@ void G_DoSaveGame (void)
     *save_p++ = 0x1d;		// consistancy marker 
 	 
     length = save_p - savebuffer; 
-    // DOOM-ORACLE: SAVEGAMESIZE is the limit for the 32-bit layout, which
-    // this 64-bit file is bigger than; doom/src/Doom/Save.elm checks it.
-    if (length > 0x100000) 
+    if (length > SAVEGAMESIZE) 
 	I_Error ("Savegame buffer overrun"); 
     M_WriteFile (name, savebuffer, length); 
     gameaction = ga_nothing; 

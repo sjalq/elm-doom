@@ -46,6 +46,7 @@ import Doom.Int32 as Int32
 import Doom.Level as Level
 import Doom.Mobj exposing (Mobj)
 import Doom.Play.Env exposing (Env)
+import Doom.Play.MapUtil as MapUtil
 import Doom.Player as Player
 import Doom.Video as Video exposing (Framebuffer, Patch)
 import Doom.Wad as Wad exposing (Wad)
@@ -1183,10 +1184,12 @@ mapBlockUnits =
     128 * Fixed.fracunit
 
 
-{-| AM\_drawGrid: lines on the blockmap's 128-unit grid.
+{-| AM\_drawGrid: lines on the blockmap's 128-unit grid, from the origin the game
+now reads (`World.bmap`: the lump's, unless an intercepts overrun wrote over it,
+as on DOS).
 -}
-drawGrid : Env -> State -> Int -> List Dot -> List Dot
-drawGrid env s color acc0 =
+drawGrid : Env -> World -> State -> Int -> List Dot -> List Dot
+drawGrid env world s color acc0 =
     let
         firstLine from org =
             let
@@ -1218,7 +1221,7 @@ drawGrid env s color acc0 =
                 acc
 
         bm =
-            env.level.blockmap
+            MapUtil.blockmap env world
     in
     acc0
         |> vertical (firstLine s.mx bm.orgx) (Int32.add s.mx s.mw)
@@ -1566,7 +1569,7 @@ drawer env world _ (Model s) fb =
             dots =
                 []
                     |> (if s.grid then
-                            drawGrid env s (grays + 16 // 2)
+                            drawGrid env world s (grays + 16 // 2)
 
                         else
                             identity

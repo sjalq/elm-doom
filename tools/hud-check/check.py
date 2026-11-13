@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Status bar and heads-up messages against linuxdoom-1.10, frame by frame.
 
-    python3 check.py WAD [DEMO1 DEMO2 ...] [--clev]
+    python3 check.py WAD [DEMO1 DEMO2 ... or demo files] [--clev]
 
 Builds a C harness from ../../oracle/src plus harness.c (in build/oracle-hud):
 after every tic ST_Drawer draws onto the persistent screens[0] and HU_Drawer onto
@@ -44,15 +44,10 @@ def build_oracle():
           '\t{ extern void Harness_AfterTic (void); Harness_AfterTic (); }')
     with open(os.path.join(src, 'st_stuff.c'), 'a') as f:
         f.write('\nint st_palette_harness (void) { return st_palette; }\n')
-    patch(os.path.join(src, 'i_headless.c'),
-          'void S_ChangeMusic (int music_id, int looping) {}',
-          '#include "sounds.h"\n'
-          'void Harness_MusicName (const char* s);\n'
-          'void S_ChangeMusic (int music_id, int looping)\n{\n'
-          '    char buf[32];\n'
-          '    if (music_id <= mus_None || music_id >= NUMMUSIC) sprintf (buf, "bad %d", music_id);\n'
-          '    else sprintf (buf, "D_%s", S_music[music_id].name);\n'
-          '    Harness_MusicName (buf);\n}')
+    patch(os.path.join(src, 's_sound.c'),
+          '  int\t\t\tlooping )\n{\n    musicinfo_t*\tmusic;\n    char\t\tnamebuf[9];\n',
+          '  int\t\t\tlooping )\n{\n    musicinfo_t*\tmusic;\n    char\t\tnamebuf[9];\n'
+          '    { extern void Harness_Music (int); Harness_Music (musicnum); }\n')
     subprocess.run(['make'], cwd=BUILD, check=True, stdout=subprocess.DEVNULL)
     os.makedirs(os.path.join(BUILD, 'frames'), exist_ok=True)
 
@@ -69,8 +64,11 @@ def main():
     os.makedirs(out, exist_ok=True)
     failed = False
     for demo in demos:
-        c_out = os.path.join(BUILD, demo + '.txt')
-        e_out = os.path.join(out, demo + '.txt')
+        if os.path.exists(demo):
+            demo = os.path.abspath(demo)
+        name = os.path.basename(demo)
+        c_out = os.path.join(BUILD, name + '.txt')
+        e_out = os.path.join(out, name + '.txt')
         flags = ['-clev'] if clev else []
         subprocess.run(['./doom-oracle', '-iwad', wad, '-playdemo', demo, '-hudout', c_out] + flags,
                        cwd=BUILD, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -540,10 +540,11 @@ ST_Responder (event_t* ev)
   // if a user keypress...
   else if (ev->type == ev_keydown)
   {
-    if (!netgame)
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom st_stuff.c:393): no
+    // cheats but idclev in a netgame or on Nightmare, where their sequences
+    // aren't fed the keys.
+    if (!netgame && gameskill != sk_nightmare)
     {
-      // b. - enabled for more debug fun.
-      // if (gameskill != sk_nightmare) {
       
       // 'dqd' cheat for toggleable god mode
       if (cht_CheckCheat(&cheat_god, ev->data1))
@@ -620,10 +621,12 @@ ST_Responder (event_t* ev)
 	    S_ChangeMusic(musnum, 1);
 	}
       }
-      // Simplified, accepting both "noclip" and "idspispopd".
-      // no clipping mode cheat
-      else if ( cht_CheckCheat(&cheat_noclip, ev->data1) 
-		|| cht_CheckCheat(&cheat_commercial_noclip,ev->data1) )
+      // DOOM-ORACLE: DOS behaviour (see chocolate-doom st_stuff.c:482-487):
+      // Doom accepts only idspispopd, Doom II only idclip.
+      else if ( (gamemode != commercial
+		 && cht_CheckCheat(&cheat_noclip, ev->data1))
+		|| (gamemode == commercial
+		    && cht_CheckCheat(&cheat_commercial_noclip,ev->data1)) )
       {	
 	plyr->cheats ^= CF_NOCLIP;
 	
@@ -673,7 +676,9 @@ ST_Responder (event_t* ev)
     }
     
     // 'clev' change-level cheat
-    if (cht_CheckCheat(&cheat_clev, ev->data1))
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom st_stuff.c:533): not in
+    // a netgame (its sequence isn't fed the keys there).
+    if (!netgame && cht_CheckCheat(&cheat_clev, ev->data1))
     {
       char		buf[3];
       int		epsd;
@@ -692,29 +697,19 @@ ST_Responder (event_t* ev)
 	map = buf[1] - '0';
       }
 
-      // Catch invalid maps.
-      if (epsd < 1)
-	return false;
-
-      if (map < 1)
-	return false;
-      
-      // Ohmygod - this is not going to work.
-      if ((gamemode == retail)
-	  && ((epsd > 4) || (map > 9)))
-	return false;
-
-      if ((gamemode == registered)
-	  && ((epsd > 3) || (map > 9)))
-	return false;
-
-      if ((gamemode == shareware)
-	  && ((epsd > 1) || (map > 9)))
-	return false;
-
-      if ((gamemode == commercial)
-	&& (( epsd > 1) || (map > 34)))
-	return false;
+      // DOOM-ORACLE: DOS behaviour (see chocolate-doom st_stuff.c:567-601,
+      // the Ultimate Doom executable): episodes 1 to 4, maps 1 to 9; in
+      // Doom II maps 1 to 40 (episode 0 is accepted).
+      if (gamemode != commercial)
+      {
+	if (epsd < 1 || epsd > 4 || map < 1 || map > 9)
+	  return false;
+      }
+      else
+      {
+	if (map < 1 || map > 40)
+	  return false;
+      }
 
       // So be it.
       plyr->message = STSTR_CLEV;

@@ -7,7 +7,7 @@
 //    64-bit layout is bigger than the 32-bit one SAVEGAMESIZE is for).
 //  - G_Ticker calls Oracle_SaveCheck first (does nothing without
 //    -savecheck; see oracle_savecheck.c).
-//  - G_DoPlayDemo: accepts demo version 109 (same format as 110) and a demo
+//  - G_DoPlayDemo: accepts demo version 109 only, as DOS v1.9 does, and a demo
 //    already in memory (oracle_demodata: a demo file or ticcmd stream);
 //    a wrong version is an error instead of a silent hang.
 //  - G_CheckSpot: the teleport fog offset of a start facing 180..315 is
@@ -1640,8 +1640,10 @@ void G_DoPlayDemo (void)
 	demobuffer = demo_p = oracle_demodata;
     else
 	demobuffer = demo_p = W_CacheLumpName (defdemoname, PU_STATIC);
-    // DOOM-ORACLE: v1.9 (109) demos have the same format as 110 ones.
-    if ( *demo_p != VERSION && *demo_p != 109)
+    // DOOM-ORACLE: DOS behaviour (see chocolate-doom g_game.c:G_DoPlayDemo):
+    // the DOS v1.9 executable plays only version 109 demos (linuxdoom-1.10's
+    // VERSION is 110). DOS then just doesn't play it; here it is an error.
+    if ( *demo_p != 109)
 	I_Error ("Demo is from a different game version (%d)!", *demo_p);
     demo_p++;
     

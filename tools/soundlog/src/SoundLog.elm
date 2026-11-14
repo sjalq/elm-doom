@@ -1,6 +1,6 @@
 module SoundLog exposing (main)
 
-{-| A demo's sound log, to compare with the C oracle's `-soundlog` (doom/oracle,
+{-| A demo's sound log, to compare with the C oracle's `-soundlog` (verify/oracle,
 compare\_sounds.py): plays a demo through `Doom.Game` one tic per iteration, as the
 oracle's `-full -playdemo` loop does with singletics, runs `Doom.Audio.Sound` on
 every tic's sounds and once per iteration after the tic, and prints the commands in

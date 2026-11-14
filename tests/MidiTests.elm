@@ -1,8 +1,8 @@
 module MidiTests exposing (suite)
 
 {-| Doom.Audio.Midi on small hand-made MUS songs. The expected files were checked
-against Chocolate Doom's mus2mid (by way of doom/browser/oplmusic.js);
-doom/tools/midi-check compares every song in a WAD.
+against Chocolate Doom's mus2mid (by way of hosts/browser/oplmusic.js);
+tools/midi-check compares every song in a WAD.
 -}
 
 import Bytes exposing (Bytes)

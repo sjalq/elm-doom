@@ -1,0 +1,4 @@
+# WADs are never committed: tools/fetch-freedoom.sh fetches Freedoom here, and you can
+# put your own IWADs (doom1.wad, doom.wad, ...) here too.
+*
+!.gitignore

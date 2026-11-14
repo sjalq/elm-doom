@@ -11,7 +11,7 @@ asked for.
 Script lines, by leveltime: `T down KEY`, `T up KEY` (Doom key codes), `T map`
 (set ML\_MAPPED on every line whose index mod 3 isn't 2), `T allmap N` (the
 console player's computer map power), `T dump`. The C harness made from
-`doom/oracle` reads the same script.
+`verify/oracle` reads the same script.
 
 -}
 

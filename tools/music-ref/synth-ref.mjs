@@ -1,5 +1,5 @@
 // The reference for host/synth (Elm OS's Rust port of the same music code): render a
-// song with the browser's music code (doom/browser/oplmusic.js) at any output rate,
+// song with the browser's music code (hosts/browser/oplmusic.js) at any output rate,
 // the way Chocolate Doom does at that mixing rate, and save the MIDI files it played
 // so the Rust synthesizer can play the very same ones. host/synth/tests/reference.rs
 // runs this and compares every sample (see there for how to run it).

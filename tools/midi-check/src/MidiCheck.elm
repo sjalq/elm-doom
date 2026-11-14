@@ -1,7 +1,7 @@
 port module MidiCheck exposing (main)
 
 {-| Doom.Audio.Midi on a list of MUS lumps, for check.mjs to compare with
-Chocolate Doom's mus2mid (by way of doom/browser/oplmusic.js). The flags are the
+Chocolate Doom's mus2mid (by way of hosts/browser/oplmusic.js). The flags are the
 lumps' bytes; the answer is each lump converted with a fresh converter, and each
 converted in turn with one converter (as a game converts songs one after another).
 -}

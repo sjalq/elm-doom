@@ -1,4 +1,4 @@
-// Doom.Audio.Midi against Chocolate Doom's mus2mid (as doom/browser/oplmusic.js
+// Doom.Audio.Midi against Chocolate Doom's mus2mid (as hosts/browser/oplmusic.js
 // has it; music-ref checks that against the C) for every music lump of the WADs
 // given: each lump converted alone, and all of a WAD's in turn with one converter
 // (mus2mid's note volumes carry over from song to song). Run by check.sh.

@@ -1,10 +1,10 @@
 // Check the JS OPL3 alone: replay a register trace from music-ref
-// (MUSIC_REF_TRACE) through doom/browser/opl3.js and compare its output with
+// (MUSIC_REF_TRACE) through hosts/browser/opl3.js and compare its output with
 // music-ref's, sample by sample.
 //
 //   node chip-replay.mjs <trace> <ref.raw>
 import fs from 'fs';
-import { Opl3 } from '../../browser/opl3.js';
+import { Opl3 } from '../../hosts/browser/opl3.js';
 
 const [tracePath, refPath] = process.argv.slice(2);
 const trace = fs.readFileSync(tracePath);

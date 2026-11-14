@@ -1,4 +1,4 @@
-// Render a Doom music lump with the browser's music code (doom/browser/oplmusic.js,
+// Render a Doom music lump with the browser's music code (hosts/browser/oplmusic.js,
 // the module the AudioWorklet runs), the way music-ref renders it with Chocolate
 // Doom's C sources, to compare them sample by sample.
 //
@@ -7,7 +7,7 @@
 // Same arguments (including the script of later actions) and output as music-ref:
 // interleaved 16-bit stereo at 49716 Hz.
 import fs from 'fs';
-import { Music, BUFFER_FRAMES, OPL_RATE } from '../../browser/oplmusic.js';
+import { Music, BUFFER_FRAMES, OPL_RATE } from '../../hosts/browser/oplmusic.js';
 
 const [wadPath, lumpName, secondsArg, outPath, volumeArg, loopingArg, script] = process.argv.slice(2);
 if (!outPath) {

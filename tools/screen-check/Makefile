@@ -5,21 +5,21 @@
 #   make                 build ./harness and ./screen-check
 #   make check WAD=..    run every scenario in check.py on both, compare
 #
-# The game sources are doom/oracle/src (linuxdoom-1.10 with the oracle's
+# The game sources are verify/oracle/src (linuxdoom-1.10 with the oracle's
 # platform changes), minus its driver and s_sound.c, which the harness replaces
 # with stubs that log the sounds and music asked for.
 
 CC     ?= clang
 ECO    ?= eco
-ORACLE  = ../../oracle
+ORACLE  = ../../verify/oracle
 SRC     = $(ORACLE)/src
 DFLAGS  = -std=gnu99 -fsigned-char -fwrapv -fno-strict-aliasing -ffp-contract=off \
           -DNORMALUNIX -w -O1 -Wno-implicit-int -Wno-incompatible-function-pointer-types \
           -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-type
 SRCS    = $(filter-out $(SRC)/oracle_main.c $(SRC)/s_sound.c,$(wildcard $(SRC)/*.c))
 OBJS    = $(patsubst $(SRC)/%.c,build/%.o,$(SRCS)) build/harness.o
-WAD    ?= ../../headless/freedoom1.wad
-WAD2   ?= freedoom2.wad
+WAD    ?= ../../wads/freedoom1.wad
+WAD2   ?= ../../wads/freedoom2.wad
 
 all: harness screen-check
 

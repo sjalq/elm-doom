@@ -1,6 +1,6 @@
 module SaveCheck exposing (main)
 
-{-| Check saved games against linuxdoom-1.10 (doom/oracle's `-savecheck`).
+{-| Check saved games against linuxdoom-1.10 (verify/oracle's `-savecheck`).
 
     savecheck <wad> <demo lump or file> <leveltime> <save file>
 

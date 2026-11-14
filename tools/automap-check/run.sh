@@ -3,17 +3,17 @@
 #
 #   ECO=/path/to/eco WAD=/path/to/freedoom1.wad ./run.sh
 #
-# Builds a C harness from doom/oracle (patched by patch_harness.py: script
+# Builds a C harness from verify/oracle (patched by patch_harness.py: script
 # events into AM_Responder after P_Ticker, AM_Drawer's 320x168 window dumped
 # after AM_Ticker) and the Elm tool, plays DEMO1..4 with each script*.txt, and
 # compares every dumped frame (cmp.py; PNGs of each frame land in out/png*).
 set -e
 cd "$(dirname "$0")"
 ECO="${ECO:-eco}"
-WAD="${WAD:-../../headless/freedoom1.wad}"
+WAD="${WAD:-../../wads/freedoom1.wad}"
 rm -rf out/harness
 mkdir -p out/harness
-cp -R ../../oracle/src ../../oracle/Makefile out/harness/
+cp -R ../../verify/oracle/src ../../verify/oracle/Makefile out/harness/
 python3 -I patch_harness.py out/harness
 make -C out/harness -j8 >/dev/null
 "$ECO" make src/AutomapCheck.elm --output=automap-check >/dev/null

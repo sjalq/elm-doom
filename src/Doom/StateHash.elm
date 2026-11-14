@@ -1,7 +1,7 @@
 module Doom.StateHash exposing (line, combine)
 
 {-| One line summing up a level's state after a tic, to compare this port with the C
-game tic by tic (doom/oracle prints the same line from linuxdoom-1.10).
+game tic by tic (verify/oracle prints the same line from linuxdoom-1.10).
 
 The line, values in decimal, separated by single spaces:
 

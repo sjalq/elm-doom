@@ -1,7 +1,7 @@
 module Doom.SaveTest exposing (suite)
 
 {-| The description at the start of a save file. Saving and loading whole games is
-checked against linuxdoom-1.10 by doom/tools/savecheck and the oracle's
+checked against linuxdoom-1.10 by tools/savecheck and the oracle's
 -savecheck.
 -}
 

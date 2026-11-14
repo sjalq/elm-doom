@@ -2,11 +2,11 @@
 # Render songs with Chocolate Doom's C music code (music-ref) and with the
 # browser's JS port (render.mjs), and compare them sample by sample.
 #   ./compare.sh [seconds]       (default 60)
-# WADs: ../../headless/freedoom1.wad, and FREEDOOM2 (default: next to it).
+# WADs: ../../wads/freedoom1.wad, and FREEDOOM2 (default: next to it).
 set -e
 cd "$(dirname "$0")"
 S="${1:-60}"
-W1="${FREEDOOM1:-../../headless/freedoom1.wad}"
+W1="${FREEDOOM1:-../../wads/freedoom1.wad}"
 W2="${FREEDOOM2:-$(dirname "$(readlink "$W1" 2>/dev/null || echo "$W1")")/freedoom2.wad}"
 mkdir -p out
 python3 midi2mus.py "$W1" D_E1M1 out/E1M1.mus

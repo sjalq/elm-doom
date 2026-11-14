@@ -1,4 +1,4 @@
-// doom/browser/oplmusic.js at another output rate, for the tools that check other
+// hosts/browser/oplmusic.js at another output rate, for the tools that check other
 // ports against it (synth-ref.mjs, ../midi-check). The browser plays at the chip's
 // own rate (49716 Hz) and resamples, so the rate is a constant of the module: this
 // loads a copy of it with the rate and Chocolate's buffer size at that rate put in,
@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-const browser = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../browser');
+const browser = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../hosts/browser');
 
 // Chocolate's GetSliceSize(): the largest power of two of frames within 28 ms
 export function sliceFrames(rate) {

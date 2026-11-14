@@ -3,7 +3,7 @@
 
     python3 check.py WAD [DEMO1 DEMO2 ... or demo files] [--clev]
 
-Builds a C harness from ../../oracle/src plus harness.c (in build/oracle-hud):
+Builds a C harness from ../../verify/oracle/src plus harness.c (in build/oracle-hud):
 after every tic ST_Drawer draws onto the persistent screens[0] and HU_Drawer onto
 a cleared one, with a script of cheat keys, full-screen and automap stretches.
 Then runs ./hud-check (build it with: eco make src/HudCheck.elm --output=hud-check)

@@ -1,7 +1,7 @@
 // screen-check harness (NOT part of linuxdoom-1.10): runs the original
 // intermission (wi_stuff.c) or finale (f_finale.c) on its own and dumps
-// screens[0] after every tic, for doom/tools/screen-check to compare with
-// the Elm port pixel for pixel. Built from doom/oracle/src (see Makefile).
+// screens[0] after every tic, for tools/screen-check to compare with
+// the Elm port pixel for pixel. Built from verify/oracle/src (see Makefile).
 //
 //   harness -iwad WAD [-file PWAD] -out PREFIX -tics N [-press T,T..] [-key T,T..]
 //           ( -wi EPSD LAST NEXT DIDSECRET MAXK MAXI MAXS PARTIME PNUM

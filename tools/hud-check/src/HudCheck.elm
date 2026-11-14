@@ -6,8 +6,8 @@ full-screen and automap stretches), printing per frame
 
     gametic palette statusbarHash messagesHash
 
-to compare with the C harness built from doom/oracle's sources (see
-doom/tools/hud-check/harness.c, run by check.py): the status bar is drawn onto a screen kept from
+to compare with the C harness built from verify/oracle's sources (see
+tools/hud-check/harness.c, run by check.py): the status bar is drawn onto a screen kept from
 frame to frame, the messages onto a cleared screen. Every 500th frame (or every
 frame with --dump-all) is written as 64000 raw bytes to OUTDIR/eNNNNN.raw.
 

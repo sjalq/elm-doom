@@ -1,0 +1,31 @@
+# -warp 1 1: Esc, down x3 to Save Game, Enter, slot 0, Enter, name "m",
+# Enter; walk; Esc (menu reopens on Save Game), up to Load Game, Enter,
+# slot 0 Enter (loads); walk on.
+20 down 27
+21 up 27
+30 down 175
+31 up 175
+36 down 175
+37 up 175
+42 down 175
+43 up 175
+50 down 13
+51 up 13
+60 down 13
+61 up 13
+70 down 109
+71 up 109
+80 down 13
+81 up 13
+100 down 173
+160 up 173
+180 down 27
+181 up 27
+190 down 173
+191 up 173
+200 down 13
+201 up 13
+210 down 13
+211 up 13
+230 down 172
+250 up 172

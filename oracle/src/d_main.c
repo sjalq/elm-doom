@@ -1065,8 +1065,11 @@ void D_DoomMain (void)
 	    startmap = atoi (myargv[p+1]);
 	else
 	{
+	    // DOOM-ORACLE: with -iwad the game mode is not known yet here, so
+	    // a Doom II "-warp MAP" as the last argument has no myargv[p+2]
+	    // (DOS never reads it for Doom II); the map is read again below.
 	    startepisode = myargv[p+1][0]-'0';
-	    startmap = myargv[p+2][0]-'0';
+	    startmap = p < myargc-2 ? myargv[p+2][0]-'0' : 1;
 	}
 	autostart = true;
     }

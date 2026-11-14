@@ -1,0 +1,54 @@
+# freedoom1 -warp 4 1: idspispopd, noclip walk to the exit switch at
+# (1888,-1888), noclip off, face south, use: intermission (use x3), E4M2.
+5 down 105
+6 up 105
+7 down 100
+8 up 100
+9 down 115
+10 up 115
+11 down 112
+12 up 112
+13 down 105
+14 up 105
+15 down 115
+16 up 115
+17 down 112
+18 up 112
+19 down 111
+20 up 111
+21 down 112
+22 up 112
+23 down 100
+24 up 100
+30 mouse 0 621 0
+31 down 173
+382 up 173
+422 down 105
+423 up 105
+424 down 100
+425 up 100
+426 down 115
+427 up 115
+428 down 112
+429 up 112
+430 down 105
+431 up 105
+432 down 115
+433 up 115
+434 down 112
+435 up 112
+436 down 111
+437 up 111
+438 down 112
+439 up 112
+440 down 100
+441 up 100
+447 mouse 0 1427 0
+450 down 32
+451 up 32
+560 down 32
+561 up 32
+650 down 32
+651 up 32
+740 down 32
+741 up 32

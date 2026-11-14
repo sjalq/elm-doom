@@ -1,0 +1,29 @@
+# Title: Esc, New Game, episode 1, skill: down x2 to Nightmare (from Hurt me plenty), Enter (are
+# you sure?), n (closes the menu); Esc, Enter, Enter (skill menu remembers
+# Nightmare), Enter, y: E1M1 on Nightmare.
+10 down 27
+11 up 27
+20 down 13
+21 up 13
+30 down 13
+31 up 13
+40 down 175
+41 up 175
+44 down 175
+45 up 175
+60 down 13
+61 up 13
+80 down 110
+81 up 110
+90 down 27
+91 up 27
+96 down 13
+97 up 13
+102 down 13
+103 up 13
+110 down 13
+111 up 13
+125 down 121
+126 up 121
+150 down 173
+200 up 173

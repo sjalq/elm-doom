@@ -1,0 +1,11 @@
+# -warp 1 1: walk, pause, Esc menu while paused, Esc, pause again, walk.
+20 down 173
+40 down 255
+41 up 255
+80 down 27
+81 up 27
+100 down 27
+101 up 27
+120 down 255
+121 up 255
+160 up 173

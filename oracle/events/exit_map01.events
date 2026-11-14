@@ -1,0 +1,73 @@
+# freedoom2 -warp 1 -skill 3: idclip, walk east inside the start room and
+# corridor, then south (noclip) into the exit room, idclip off, face north,
+# use the switch at (216,-632): intermission (use x3), then MAP02.
+5 down 105
+6 up 105
+7 down 100
+8 up 100
+9 down 99
+10 up 99
+11 down 108
+12 up 108
+13 down 105
+14 up 105
+15 down 112
+16 up 112
+22 mouse 0 -169 0
+23 down 173
+26 up 173
+67 down 173
+69 up 173
+110 down 173
+112 up 173
+153 down 173
+154 up 173
+195 down 173
+196 up 173
+236 mouse 0 1 0
+237 down 173
+238 up 173
+279 down 173
+280 up 173
+320 mouse 0 247 0
+321 down 173
+352 up 173
+392 mouse 0 3 0
+393 down 173
+394 up 173
+434 mouse 0 1970 0
+435 down 173
+484 up 173
+524 mouse 0 3 0
+525 down 173
+527 up 173
+568 down 173
+569 up 173
+610 down 173
+611 up 173
+651 mouse 0 1 0
+652 down 173
+653 up 173
+694 down 173
+695 up 173
+735 down 105
+736 up 105
+737 down 100
+738 up 100
+739 down 99
+740 up 99
+741 down 108
+742 up 108
+743 down 105
+744 up 105
+745 down 112
+746 up 112
+752 mouse 0 4088 0
+755 down 32
+756 up 32
+865 down 32
+866 up 32
+955 down 32
+956 up 32
+1045 down 32
+1046 up 32

@@ -1,0 +1,29 @@
+# -warp 1 1: quick save (F6 with no quicksave slot opens the save menu;
+# slot 0, name "q", Enter), walk, F6 again (quicksave over "q"? y), turn and
+# walk, F9 (quickload "q"? y), walk on.
+30 down 173
+60 up 173
+70 down 192
+71 up 192
+80 down 13
+81 up 13
+90 down 113
+91 up 113
+100 down 13
+101 up 13
+130 down 173
+170 up 173
+180 down 192
+181 up 192
+190 down 121
+191 up 121
+210 down 174
+230 up 174
+240 down 173
+280 up 173
+300 down 195
+301 up 195
+310 down 121
+311 up 121
+330 down 173
+380 up 173

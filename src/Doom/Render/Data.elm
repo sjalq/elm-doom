@@ -280,9 +280,9 @@ their switches), the sky, and every sprite lump (R\_PrecacheLevel takes the
 sprites of the things present; their deaths, shots and the weapons need the rest
 soon enough).
 
-Reading it all in the first frame would make that frame long, so a host spreads it
-over the melt (`precache`); what is left unread is read when a frame first needs
-it, as before. Either way the frames are the same.
+Reading it all in the first frame would make that frame long, so `Doom.Shell`
+spreads it over the melt's frames (`precache`); whatever is left unread is read
+when a frame first needs it. Either way the frames are the same.
 
 -}
 precacheLevel : Data -> World -> Int -> RenderData -> List Precache

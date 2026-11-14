@@ -123,7 +123,7 @@ solidColumn newestFirst old =
                         Array.fromList (layDown old VI.rowCount descending [])
 
             else
-                List.foldr (\p col -> setRun p.top p.pixels col) old placed
+                List.foldr (\p col -> spliceRun p.top p.pixels col) old placed
 
 
 {-| Whether runs sorted from the bottom up lie inside the column without touching
@@ -192,6 +192,22 @@ oldRows old from to acc =
         oldRows old from (to - 1) ((Array.get to old |> Maybe.withDefault 0) :: acc)
 
 
+{-| `setRun` for a run that may be long (a sprite's or masked wall's post): cut
+into the column in one piece when it lies on the screen.
+-}
+spliceRun : Int -> List Int -> Array Int -> Array Int
+spliceRun top pixels col =
+    let
+        length =
+            List.length pixels
+    in
+    if length > 6 && top >= 0 && top + length <= VI.rowCount then
+        VI.splice top (top + length) (Array.fromList pixels) col
+
+    else
+        setRun top pixels col
+
+
 setRun : Int -> List Int -> Array Int -> Array Int
 setRun y pixels col =
     case pixels of
@@ -206,7 +222,7 @@ applyMasked : Array Int -> Op -> Array Int -> Array Int
 applyMasked fuzzmap op col =
     case op of
         Run top px ->
-            setRun top px col
+            spliceRun top px col
 
         Fuzz top bottom pos ->
             fuzz fuzzmap top bottom pos col

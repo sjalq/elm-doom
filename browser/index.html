@@ -26,7 +26,9 @@
     canvas.focus();
   };
   onDrop(document.body, start);
-  fetchWad('freedoom1.wad')
+  const wadName = new URLSearchParams(location.search).get('wad') || 'freedoom1.wad';
+  help.textContent = 'Loading ' + wadName + '\u2026 (or drop your own IWAD here)';
+  fetchWad(wadName)
     .then(start)
     .catch((e) => { help.textContent = e.message + ': drop a WAD file here'; });
 </script>

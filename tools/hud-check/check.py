@@ -17,7 +17,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ORACLE = os.path.join(HERE, '..', '..', 'oracle')
+ORACLE = os.path.join(HERE, '..', '..', 'verify', 'oracle')
 BUILD = os.path.join(HERE, 'build', 'oracle-hud')
 
 

@@ -176,6 +176,11 @@ type alias Model =
     , pagetic : Int
     , pagename : String
     , displayplayer : Int
+
+    -- ST_Start's plyr and HU_Start's plr: the console player when the level (or the
+    -- console player's body) started; G_CheckDemoStatus setting consoleplayer back
+    -- to 0 at the end of a demo leaves them on the demo's console player
+    , hudPlayer : Int
     , time : Int
 
     -- D_Display's statics and R_SetViewSize's request
@@ -272,6 +277,7 @@ init options wad data =
             , pagetic = 0
             , pagename = "TITLEPIC"
             , displayplayer = 0
+            , hudPlayer = 0
             , time = 0
             , setsizeneeded = True
             , viewBlocks = settings.screenblocks
@@ -642,7 +648,18 @@ processEvent ev ( m, acc ) =
                 m.menu
 
         ( m2, acc2 ) =
-            List.foldl menuEffect ( { m | menu = response.menu, time = response.time }, acc ) response.effects
+            -- I_Quit exits inside the message routine: what M_Responder would do after it
+            -- (the message's sfx_swtchx) never happens
+            List.foldl
+                (\effect ( mm, aa ) ->
+                    if mm.finished then
+                        ( mm, aa )
+
+                    else
+                        menuEffect effect ( mm, aa )
+                )
+                ( { m | menu = response.menu, time = response.time }, acc )
+                response.effects
     in
     if response.eaten || m2.finished then
         ( m2, acc2 )
@@ -792,7 +809,7 @@ levelResponders env ev ( m, acc ) =
                     g.params.consoleplayer
 
                 st =
-                    StatusBar.responder ev env g.world console m.statusBar
+                    StatusBar.responder ev env g.world m.hudPlayer m.statusBar
 
                 m2 =
                     { m | statusBar = st.model, game = { g | world = st.world } }
@@ -1209,6 +1226,7 @@ respawned before after m =
                             0
                     , stStopped = False
                     , stPalette = -1
+                    , hudPlayer = console
                     , statusBar = StatusBar.start env after.world console m.statusBar
                     , messages = Messages.start env after.world m.messages
                 }
@@ -1277,6 +1295,7 @@ afterLoad initNew before after m acc =
                         , sendpause = False
                         , sendsave = Nothing
                         , displayplayer = console
+                        , hudPlayer = console
                         , renderData = renderData
                         , palette =
                             if m.stStopped then
@@ -1380,13 +1399,13 @@ levelTickers env worldBefore m =
             Automap.stopOnDeath worldBefore g.world console m.automap
 
         ( statusBar, world1 ) =
-            StatusBar.ticker env g.world console m.statusBar
+            StatusBar.ticker env g.world m.hudPlayer m.statusBar
 
         automap =
             Automap.ticker env world1 console automap0
 
         ( messages, world2 ) =
-            Messages.ticker { showMessages = (Menu.settings m.menu).showMessages } world1 console m.messages
+            Messages.ticker { showMessages = (Menu.settings m.menu).showMessages } world1 m.hudPlayer m.messages
     in
     { m | statusBar = statusBar, automap = automap, messages = messages, game = { g | world = world2 } }
 
@@ -1507,13 +1526,13 @@ display m0 =
                             ( statusBar, withBar ) =
                                 StatusBar.drawer env
                                     g.world
-                                    console
+                                    m.hudPlayer
                                     { fullscreen = win.height == 200, refresh = redrawsbar, automap = automapActive }
                                     m.statusBar
                                     withMap
 
                             barPalette =
-                                StatusBar.palette g.world console
+                                StatusBar.palette g.world m.hudPlayer
                         in
                         ( if barPalette /= m.stPalette then
                             { m | statusBar = statusBar, fullscreen = win.height == 200, stPalette = barPalette, palette = barPalette }

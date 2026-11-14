@@ -2,6 +2,7 @@ module Doom.Shell exposing
     ( Shell, Options, defaultOptions, init
     , Output, iteration, wiping, wipeStep
     , screen, game, menuSettings, savedGames, saveCount, setSavedGames, finished
+    , menuActive, bindings, setBindings
     )
 
 {-| The game shell (d\_main.c, with g\_game.c's G\_Responder and the parts of G\_Ticker
@@ -27,6 +28,7 @@ D\_Display's wipe loop does (the first step moves the melt by 2 tics, the others
 @docs Shell, Options, defaultOptions, init
 @docs Output, iteration, wiping, wipeStep
 @docs screen, game, menuSettings, savedGames, saveCount, setSavedGames, finished
+@docs menuActive, bindings, setBindings
 
 -}
 
@@ -413,6 +415,27 @@ saveCount (Shell m) =
 setSavedGames : Dict Int Bytes -> Shell -> Shell
 setSavedGames slots (Shell m) =
     Shell { m | slots = slots }
+
+
+{-| menuactive: the menu (or one of its messages) is on the screen.
+-}
+menuActive : Shell -> Bool
+menuActive (Shell m) =
+    Menu.active m.menu
+
+
+{-| The key bindings the controls are read with.
+-}
+bindings : Shell -> Bindings
+bindings (Shell m) =
+    m.bindings
+
+
+{-| Change the key bindings, from the next tic on.
+-}
+setBindings : Bindings -> Shell -> Shell
+setBindings b (Shell m) =
+    Shell { m | bindings = b }
 
 
 {-| Whether the program has ended (I\_Quit: a -playdemo demo is over, the menu's Quit

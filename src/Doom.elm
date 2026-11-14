@@ -3,6 +3,7 @@ module Doom exposing
     , Msg(..), update, msPerTic, maxCatchUp
     , view, frames, settings, savedGames, saveCount, finished
     , game, wad, playing, state, error
+    , menuActive, bindings, setBindings
     )
 
 {-| Doom (linuxdoom-1.10) as an Elm program, frame for frame the original: give it a
@@ -65,6 +66,11 @@ False makes it end the game (`finished`) as I\_Quit does.
 
 @docs game, wad, playing, state, error
 
+
+# Controls
+
+@docs menuActive, bindings, setBindings
+
 -}
 
 import Bytes exposing (Bytes)
@@ -73,6 +79,7 @@ import Doom.Audio exposing (Command)
 import Doom.Data.Load as DataLoad
 import Doom.Event exposing (Event)
 import Doom.Game as Game exposing (Game, GameState)
+import Doom.Input exposing (Bindings)
 import Doom.Menu exposing (Settings)
 import Doom.Play.Env exposing (Env)
 import Doom.Screen exposing (Screen)
@@ -311,3 +318,27 @@ state model =
 error : Model -> Maybe String
 error model =
     (game model).error
+
+
+{-| Whether the menu, or one of its messages ("are you sure?"), is on the screen: a
+host that captured the mouse for the game can let it go meanwhile.
+-}
+menuActive : Model -> Bool
+menuActive (Model m) =
+    Shell.menuActive m.shell
+
+
+{-| The key and mouse button bindings the game reads the player's controls with
+(`Doom.Input.Bindings`; `Options.bindings` at the start).
+-}
+bindings : Model -> Bindings
+bindings (Model m) =
+    Shell.bindings m.shell
+
+
+{-| Change the bindings, from the next tic on, as DOS's setup program did between
+games. The same bindings give the same frames.
+-}
+setBindings : Bindings -> Model -> Model
+setBindings b (Model m) =
+    Model { m | shell = Shell.setBindings b m.shell }

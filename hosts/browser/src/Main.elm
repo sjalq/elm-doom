@@ -17,7 +17,7 @@ import Bytes exposing (Bytes)
 import Dict exposing (Dict)
 import Doom
 import Doom.Audio exposing (Command)
-import Doom.Menu exposing (Settings)
+import Doom.Config exposing (Settings)
 import File
 import Host
 import Html

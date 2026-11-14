@@ -26,6 +26,7 @@ including the mouse's forward button and its double clicks for "use".
 
 import Array exposing (Array)
 import Bitwise
+import Doom.Config as Config
 import Doom.Event exposing (Event(..))
 import Doom.Int32 as Int32
 import Doom.Ticcmd as Ticcmd exposing (Ticcmd)
@@ -240,46 +241,17 @@ orIf cond bit b =
 -- G_RESPONDER AND G_BUILDTICCMD
 
 
-{-| The key bindings (Doom key codes, see `Doom.Event`) and mouse buttons (0 left, 1
-right, 2 middle): m\_misc.c's `key_*` and `mouseb_*` settings.
+{-| The key and mouse button bindings: `Doom.Config.Bindings`.
 -}
 type alias Bindings =
-    { right : Int
-    , left : Int
-    , up : Int
-    , down : Int
-    , strafeLeft : Int
-    , strafeRight : Int
-    , fire : Int
-    , use : Int
-    , strafe : Int
-    , speed : Int
-    , mouseFire : Int
-    , mouseStrafe : Int
-    , mouseForward : Int
-    }
+    Config.Bindings
 
 
-{-| The defaults: arrows to move and turn, ',' and '.' to strafe, Ctrl fires, space
-uses, Alt strafes, Shift runs; the left mouse button fires, the right one strafes,
-the middle one moves forward.
+{-| m\_misc.c's defaults: `Doom.Config.defaultBindings`.
 -}
 defaultBindings : Bindings
 defaultBindings =
-    { right = 0xAE
-    , left = 0xAC
-    , up = 0xAD
-    , down = 0xAF
-    , strafeLeft = Char.toCode ','
-    , strafeRight = Char.toCode '.'
-    , fire = 157
-    , use = Char.toCode ' '
-    , strafe = 184
-    , speed = 182
-    , mouseFire = 0
-    , mouseStrafe = 1
-    , mouseForward = 2
-    }
+    Config.defaultBindings
 
 
 {-| g\_game.c's input state: `gamekeydown`, `mousebuttons`, the mouse movement since

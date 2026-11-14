@@ -2,7 +2,7 @@ module Doom exposing
     ( Model, init, Options, defaultOptions, start
     , Msg(..), update, msPerTic, maxCatchUp
     , view, frames, settings, savedGames, saveCount, finished
-    , game, wad, playing, state, error
+    , inGame, paused, wad, error
     , menuActive, bindings, setBindings
     )
 
@@ -64,7 +64,7 @@ False makes it end the game (`finished`) as I\_Quit does.
 
 # Reading the game
 
-@docs game, wad, playing, state, error
+@docs inGame, paused, wad, error
 
 
 # Controls
@@ -76,16 +76,14 @@ False makes it end the game (`finished`) as I\_Quit does.
 import Bytes exposing (Bytes)
 import Dict exposing (Dict)
 import Doom.Audio exposing (Command)
+import Doom.Config exposing (Bindings, Settings, Skill(..))
 import Doom.Data.Load as DataLoad
+import Doom.Defs as Defs
 import Doom.Event exposing (Event)
-import Doom.Game as Game exposing (Game, GameState)
-import Doom.Input exposing (Bindings)
-import Doom.Menu exposing (Settings)
-import Doom.Play.Env exposing (Env)
+import Doom.Game as Game exposing (Game)
 import Doom.Screen exposing (Screen)
 import Doom.Shell as Shell exposing (Shell)
 import Doom.Wad as Wad exposing (Wad)
-import Doom.World exposing (World)
 
 
 {-| The running program, the events waiting for the next pass, the time that
@@ -103,18 +101,96 @@ type Model
         }
 
 
-{-| How to start (D\_DoomMain's command line, the configuration, the saved games):
-see `Doom.Shell.Options`.
+{-| How to start: D\_DoomMain's command line, the configuration, the saved games.
+
+  - `warp`: `-warp`, start this level straight away: `( episode, map )` (episode 1
+    for a Doom II WAD), at `skill` (`Medium` if it's `Nothing`).
+  - `skill`: `-skill`; `episode`: `-episode`, start that episode's first level.
+  - `playdemo`: `-playdemo`, play this demo (a demo lump's bytes) and finish.
+  - `nomonsters`, `respawn`, `fast`: the command line switches of the same names.
+  - `settings`, `bindings`: the configuration (`Doom.Config`), as `settings` and
+    `bindings` gave them last time.
+  - `savedGames`: the saved game slots (0 to 5), as `savedGames` gave them.
+  - `quitToTitle`: the menu's Quit goes back to the title (True), or ends the game
+    (`finished`) as I\_Quit does.
+  - `soundChannels`: how many sound effects can play at once (`snd_channels`, 3 in
+    DOS v1.9's default configuration).
+
 -}
 type alias Options =
-    Shell.Options
+    { warp : Maybe ( Int, Int )
+    , skill : Maybe Skill
+    , episode : Maybe Int
+    , playdemo : Maybe Bytes
+    , nomonsters : Bool
+    , respawn : Bool
+    , fast : Bool
+    , settings : Settings
+    , bindings : Bindings
+    , savedGames : Dict Int Bytes
+    , quitToTitle : Bool
+    , soundChannels : Int
+    }
 
 
-{-| The title and demo loop, with m\_misc.c's default settings and key bindings.
+{-| The title and demo loop, with m\_misc.c's default settings and key bindings, and
+no saved games.
 -}
 defaultOptions : Options
 defaultOptions =
-    Shell.defaultOptions
+    let
+        o =
+            Shell.defaultOptions
+    in
+    { warp = o.warp
+    , skill = Nothing
+    , episode = o.episode
+    , playdemo = o.playdemo
+    , nomonsters = o.nomonsters
+    , respawn = o.respawn
+    , fast = o.fast
+    , settings = o.settings
+    , bindings = o.bindings
+    , savedGames = o.savedGames
+    , quitToTitle = o.quitToTitle
+    , soundChannels = o.soundChannels
+    }
+
+
+shellOptions : Options -> Shell.Options
+shellOptions o =
+    { warp = o.warp
+    , skill = Maybe.map defsSkill o.skill
+    , episode = o.episode
+    , playdemo = o.playdemo
+    , nomonsters = o.nomonsters
+    , respawn = o.respawn
+    , fast = o.fast
+    , settings = o.settings
+    , bindings = o.bindings
+    , savedGames = o.savedGames
+    , quitToTitle = o.quitToTitle
+    , soundChannels = o.soundChannels
+    }
+
+
+defsSkill : Skill -> Defs.Skill
+defsSkill skill =
+    case skill of
+        Baby ->
+            Defs.Baby
+
+        Easy ->
+            Defs.Easy
+
+        Medium ->
+            Defs.Medium
+
+        Hard ->
+            Defs.Hard
+
+        Nightmare ->
+            Defs.Nightmare
 
 
 {-| Start the WAD's game at the title, as the original does with no options. Gives
@@ -127,7 +203,7 @@ init =
 
 {-| Start some other way:
 
-    Doom.start { defaultOptions | warp = Just ( 1, 3 ), skill = Just Defs.Hard } wadBytes
+    Doom.start { defaultOptions | warp = Just ( 1, 3 ), skill = Just Doom.Config.Hard } wadBytes
 
 -}
 start : Options -> Bytes -> Result String ( Model, List Command )
@@ -140,7 +216,7 @@ start options bytes =
                         (\data ->
                             let
                                 ( shell, out ) =
-                                    Shell.init options w data
+                                    Shell.init (shellOptions options) w data
                             in
                             ( Model { shell = shell, events = [], pendingMs = 0, frames = 0, meltStarted = False }, out.audio )
                         )
@@ -285,32 +361,36 @@ finished (Model m) =
     Shell.finished m.shell
 
 
-{-| The whole game.
--}
 game : Model -> Game
 game (Model m) =
     Shell.game m.shell
 
 
-{-| The WAD.
+{-| Whether the player is in a game they started: not the title pages and demos.
+-}
+inGame : Model -> Bool
+inGame model =
+    let
+        g =
+            game model
+    in
+    g.state /= Game.DemoScreen && not g.demoplayback
+
+
+{-| Whether the game is paused with the pause key. (The menu stops a game too while
+it is up, see `menuActive`.)
+-}
+paused : Model -> Bool
+paused model =
+    (game model).paused
+
+
+{-| The WAD the game plays: for the host's sounds (`Doom.Audio`'s lumps, GENMIDI for
+the music) and the palette (PLAYPAL).
 -}
 wad : Model -> Wad
 wad model =
     (game model).wad
-
-
-{-| The level being played and its world, if the game is in a level.
--}
-playing : Model -> Maybe ( Env, World )
-playing model =
-    Game.playing (game model)
-
-
-{-| The game's state: a level, the intermission, the finale, or the title pages.
--}
-state : Model -> GameState
-state model =
-    (game model).state
 
 
 {-| Why the game stopped, if a level couldn't be loaded.

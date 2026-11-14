@@ -19,6 +19,7 @@ view size), in the order the C source does them.
 -}
 
 import Array exposing (Array)
+import Doom.Config as Config
 import Doom.Defs as Defs exposing (GameMode(..), Skill(..))
 import Doom.Event as Event exposing (Event(..))
 import Doom.Gfx as Gfx exposing (Gfx)
@@ -26,34 +27,17 @@ import Doom.Info.Sfx exposing (Sfx(..))
 import Doom.Video exposing (Framebuffer)
 
 
-{-| The settings the menu changes (m\_misc.c's defaults): `screenblocks` 3 to 11,
-`detailLevel` 0 high or 1 low, the volumes 0 to 15, `mouseSensitivity` 0 to 9,
-`usegamma` 0 to 4.
+{-| The settings the menu changes: `Doom.Config.Settings`.
 -}
 type alias Settings =
-    { mouseSensitivity : Int
-    , showMessages : Bool
-    , detailLevel : Int
-    , screenblocks : Int
-    , sfxVolume : Int
-    , musicVolume : Int
-    , usegamma : Int
-    }
+    Config.Settings
 
 
-{-| m\_misc.c's defaults: screenblocks 9, high detail, no gamma correction, messages
-on, mouse sensitivity 5, both volumes 8.
+{-| m\_misc.c's defaults: `Doom.Config.defaultSettings`.
 -}
 defaultSettings : Settings
 defaultSettings =
-    { mouseSensitivity = 5
-    , showMessages = True
-    , detailLevel = 0
-    , screenblocks = 9
-    , sfxVolume = 8
-    , musicVolume = 8
-    , usegamma = 0
-    }
+    Config.defaultSettings
 
 
 type MenuId

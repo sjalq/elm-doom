@@ -52,15 +52,27 @@ midi track =
 song : Bytes
 song =
     mus
-        [ 0x10, 0x80 + 60, 100 -- press key 60 on channel 0, volume 100
-        , 0x4F, 0, 30 -- percussion channel: instrument 30
-        , 0x91, 62 -- press key 62 on channel 1, its last volume; then a delay
-        , 0x81, 0x00 -- of 128 ticks
-        , 0x00, 60 -- release key 60 on channel 0
-        , 0x22, 0x80 -- pitch wheel centred on channel 2
-        , 0x33, 11 -- all notes off on channel 3
-        , 0x44, 3, 200 -- channel 4 volume 200 (over 127)
-        , 0x90, 64 -- press key 64 on channel 0, its last volume (100); then
+        [ 0x10
+        , 0x80 + 60
+        , 100 -- press key 60 on channel 0, volume 100
+        , 0x4F
+        , 0
+        , 30 -- percussion channel: instrument 30
+        , 0x91
+        , 62 -- press key 62 on channel 1, its last volume; then a delay
+        , 0x81
+        , 0x00 -- of 128 ticks
+        , 0x00
+        , 60 -- release key 60 on channel 0
+        , 0x22
+        , 0x80 -- pitch wheel centred on channel 2
+        , 0x33
+        , 11 -- all notes off on channel 3
+        , 0x44
+        , 3
+        , 200 -- channel 4 volume 200 (over 127)
+        , 0x90
+        , 64 -- press key 64 on channel 0, its last volume (100); then
         , 0x05 -- 5 ticks
         , 0x60 -- the end
         ]
@@ -69,20 +81,62 @@ song =
 expected : List Int
 expected =
     midi
-        [ 0, 0xB0, 0x7B, 0 -- channel 0's first use: all notes off
-        , 0, 0x90, 60, 100
-        , 0, 0xC9, 30 -- MUS 15 is MIDI 9
-        , 0, 0xB1, 0x7B, 0
-        , 0, 0x91, 62, 127
-        , 0x81, 0x00, 0x80, 60, 0
-        , 0, 0xB2, 0x7B, 0
-        , 0, 0xE2, 0, 64
-        , 0, 0xB3, 0x7B, 0
-        , 0, 0xB3, 0x7B, 0
-        , 0, 0xB4, 0x7B, 0
-        , 0, 0xB4, 0x07, 127
-        , 0, 0x90, 64, 100
-        , 5, 0xFF, 0x2F, 0
+        [ 0
+        , 0xB0
+        , 0x7B
+        , 0 -- channel 0's first use: all notes off
+        , 0
+        , 0x90
+        , 60
+        , 100
+        , 0
+        , 0xC9
+        , 30 -- MUS 15 is MIDI 9
+        , 0
+        , 0xB1
+        , 0x7B
+        , 0
+        , 0
+        , 0x91
+        , 62
+        , 127
+        , 0x81
+        , 0x00
+        , 0x80
+        , 60
+        , 0
+        , 0
+        , 0xB2
+        , 0x7B
+        , 0
+        , 0
+        , 0xE2
+        , 0
+        , 64
+        , 0
+        , 0xB3
+        , 0x7B
+        , 0
+        , 0
+        , 0xB3
+        , 0x7B
+        , 0
+        , 0
+        , 0xB4
+        , 0x7B
+        , 0
+        , 0
+        , 0xB4
+        , 0x07
+        , 127
+        , 0
+        , 0x90
+        , 64
+        , 100
+        , 5
+        , 0xFF
+        , 0x2F
+        , 0
         ]
 
 

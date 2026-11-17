@@ -2,6 +2,7 @@ module Doom.Wad exposing
     ( Wad, Kind(..), Lump, fromBytes, kind
     , numLumps, lumpAt, checkNumForName, lump
     , between, MapLumps, mapLumps
+    , patch, toBytes
     , name8
     )
 
@@ -24,6 +25,7 @@ file, in file order, so that no lump read goes back over the bytes.
 @docs Wad, Kind, Lump, fromBytes, kind
 @docs numLumps, lumpAt, checkNumForName, lump
 @docs between, MapLumps, mapLumps
+@docs patch, toBytes
 @docs name8
 
 -}
@@ -31,6 +33,7 @@ file, in file order, so that no lump read goes back over the bytes.
 import Array exposing (Array)
 import Bytes exposing (Bytes, Endianness(..))
 import Bytes.Decode as Decode exposing (Decoder)
+import Bytes.Encode as Encode
 import Dict exposing (Dict)
 
 
@@ -99,19 +102,8 @@ fromBytes bytes =
                             Just entries ->
                                 cutLumps bytes entries
                                     |> Result.map
-                                        (\lumps ->
-                                            Wad
-                                                { kind = k
-                                                , lumps = lumps
-                                                , numsByName =
-                                                    -- later lumps overwrite earlier ones: the last one wins
-                                                    Array.foldl
-                                                        (\l ( i, d ) -> ( i + 1, Dict.insert (String.toUpper l.name) i d ))
-                                                        ( 0, Dict.empty )
-                                                        lumps
-                                                        |> Tuple.second
-                                                }
-                                        )
+                                        -- later lumps overwrite earlier ones in numsByName: the last one wins
+                                        (fromLumps k)
                     )
 
 
@@ -213,6 +205,150 @@ mapLumps name wad =
                                 (at 10)
                         )
             )
+
+
+
+-- PATCHING
+
+
+{-| The `base` WAD with a patch WAD's lumps put into it, the way a WAD editor merges
+one into another: each of the patch's lumps takes the place of the base's lump of that
+name (the last one, as `checkNumForName` finds it), and a lump the base hasn't got
+goes at the end. A map in the patch (its marker, E1M1 or MAP01, and the ten lumps
+after it) takes the place of the base's map of that name, all eleven lumps. The
+result is the base's kind (an IWAD, for a patched IWAD).
+
+Replacing in place is what makes a patch of flats work: the original finds a flat by
+its place between F\_START and F\_END, so a new flat added at the end of the WAD,
+as `-file` adds a PWAD's lumps, would be outside them. The shareware game refuses
+`-file` altogether ("You cannot -file with the shareware version"), so a patched
+copy is the only way to change its graphics.
+
+-}
+patch : Wad -> Wad -> Wad
+patch (Wad p) (Wad base) =
+    let
+        go i lumps =
+            case Array.get i p.lumps of
+                Nothing ->
+                    lumps
+
+                Just l ->
+                    let
+                        isMap =
+                            isMapName l.name && i + 10 < Array.length p.lumps
+
+                        count =
+                            if isMap then
+                                11
+
+                            else
+                                1
+
+                        replacement =
+                            Array.slice i (i + count) p.lumps
+
+                        at =
+                            checkNumForName l.name (fromLumps base.kind lumps)
+                    in
+                    go (i + count)
+                        (case at of
+                            Just n ->
+                                Array.append (Array.slice 0 n lumps)
+                                    (Array.append replacement (Array.slice (n + count) (Array.length lumps) lumps))
+
+                            Nothing ->
+                                Array.append lumps replacement
+                        )
+    in
+    fromLumps base.kind (go 0 base.lumps)
+
+
+{-| E\\dM\\d or MAP\\d\\d: the marker of a map.
+-}
+isMapName : String -> Bool
+isMapName name =
+    case String.toList (String.toUpper name) of
+        [ 'E', e, 'M', m ] ->
+            Char.isDigit e && Char.isDigit m
+
+        [ 'M', 'A', 'P', a, b ] ->
+            Char.isDigit a && Char.isDigit b
+
+        _ ->
+            False
+
+
+fromLumps : Kind -> Array Lump -> Wad
+fromLumps k lumps =
+    Wad
+        { kind = k
+        , lumps = lumps
+        , numsByName =
+            Array.foldl
+                (\l ( i, d ) -> ( i + 1, Dict.insert (String.toUpper l.name) i d ))
+                ( 0, Dict.empty )
+                lumps
+                |> Tuple.second
+        }
+
+
+{-| The WAD as a file: the header, every lump's data in directory order, then the
+directory.
+-}
+toBytes : Wad -> Bytes
+toBytes (Wad w) =
+    let
+        lumps =
+            Array.toList w.lumps
+
+        dataSize =
+            List.foldl (\l n -> n + Bytes.width l.bytes) 0 lumps
+
+        entries =
+            List.foldl
+                (\l ( pos, acc ) ->
+                    ( pos + Bytes.width l.bytes
+                    , Encode.sequence
+                        [ Encode.signedInt32 LE pos
+                        , Encode.signedInt32 LE (Bytes.width l.bytes)
+                        , encodeName 8 l.name
+                        ]
+                        :: acc
+                    )
+                )
+                ( 12, [] )
+                lumps
+                |> Tuple.second
+                |> List.reverse
+    in
+    Encode.encode
+        (Encode.sequence
+            (encodeName 4
+                (case w.kind of
+                    Iwad ->
+                        "IWAD"
+
+                    Pwad ->
+                        "PWAD"
+                )
+                :: Encode.signedInt32 LE (List.length lumps)
+                :: Encode.signedInt32 LE (12 + dataSize)
+                :: List.map (\l -> Encode.bytes l.bytes) lumps
+                ++ entries
+            )
+        )
+
+
+{-| A name in `n` bytes, padded with zeroes (Latin-1, as `fixedName` reads it).
+-}
+encodeName : Int -> String -> Encode.Encoder
+encodeName n name =
+    let
+        codes =
+            List.map Char.toCode (String.toList (String.left n name))
+    in
+    Encode.sequence (List.map Encode.unsignedInt8 (codes ++ List.repeat (n - List.length codes) 0))
 
 
 

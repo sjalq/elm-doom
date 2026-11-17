@@ -15,7 +15,8 @@ import Doom.Level.Load as LevelLoad
 import Doom.Ticcmd as Ticcmd
 import Doom.Wad as Wad exposing (MapLumps)
 import Expect
-import Test exposing (Test, describe, test)
+import Fuzz
+import Test exposing (Test, describe, fuzz, test)
 
 
 suite : Test
@@ -86,6 +87,55 @@ smallWad =
         )
 
 
+{-| A WAD laid out as `Wad.toBytes` lays it out, written independently: the header,
+the lumps' data in order, then the directory.
+-}
+wadOf : String -> List ( String, List Int ) -> Bytes
+wadOf ident lumps =
+    let
+        dataSize =
+            List.foldl (\( _, d ) n -> n + List.length d) 0 lumps
+
+        dir =
+            List.foldl
+                (\( n, d ) ( pos, acc ) ->
+                    ( pos + List.length d
+                    , acc ++ [ Encode.signedInt32 LE pos, Encode.signedInt32 LE (List.length d), name8 n ]
+                    )
+                )
+                ( 12, [] )
+                lumps
+                |> Tuple.second
+    in
+    Encode.encode
+        (Encode.sequence
+            ([ Encode.string ident, Encode.signedInt32 LE (List.length lumps), Encode.signedInt32 LE (12 + dataSize) ]
+                ++ List.concatMap (\( _, d ) -> List.map Encode.unsignedInt8 d) lumps
+                ++ dir
+            )
+        )
+
+
+lumpsOf : Wad.Wad -> List ( String, List Int )
+lumpsOf wad =
+    List.range 0 (Wad.numLumps wad - 1)
+        |> List.filterMap (\i -> Wad.lumpAt i wad)
+        |> List.map (\l -> ( l.name, toList l.bytes ))
+
+
+patched : List ( String, List Int ) -> List ( String, List Int ) -> Result String ( Bool, List ( String, List Int ) )
+patched base patchLumps =
+    Result.map2 (\b p -> Wad.patch p b)
+        (Wad.fromBytes (wadOf "IWAD" base))
+        (Wad.fromBytes (wadOf "PWAD" patchLumps))
+        |> Result.map (\w -> ( Wad.kind w == Wad.Iwad, lumpsOf w ))
+
+
+mapGroup : String -> Int -> List ( String, List Int )
+mapGroup marker v =
+    ( marker, [] ) :: List.map (\n -> ( n, [ v ] )) [ "THINGS", "LINEDEFS", "SIDEDEFS", "VERTEXES", "SEGS", "SSECTORS", "NODES", "SECTORS", "REJECT", "BLOCKMAP" ]
+
+
 wadTests : Test
 wadTests =
     describe "Doom.Wad"
@@ -112,6 +162,34 @@ wadTests =
                 Wad.fromBytes smallWad
                     |> Result.map (Wad.between "BBB" "AAA" >> List.map .name)
                     |> Expect.equal (Ok [ "MARK" ])
+        , fuzz
+            (Fuzz.list
+                (Fuzz.pair (Fuzz.oneOfValues [ "A", "PLAYPAL", "F_START", "STFST01", "E1M1" ])
+                    (Fuzz.list (Fuzz.intRange 0 255))
+                )
+            )
+            "toBytes writes back what fromBytes read, laid out as the original does"
+          <|
+            \lumps ->
+                Wad.fromBytes (wadOf "PWAD" lumps)
+                    |> Result.map Wad.toBytes
+                    |> Result.map toList
+                    |> Expect.equal (Ok (toList (wadOf "PWAD" lumps)))
+        , test "a patch's lumps take the place of the base's, and new ones go at the end" <|
+            \_ ->
+                patched
+                    [ ( "PLAYPAL", [ 1 ] ), ( "F_START", [] ), ( "DEM1_1", [ 2, 2 ] ), ( "F_END", [] ), ( "STFST01", [ 3 ] ) ]
+                    [ ( "STFST01", [ 7, 7, 7 ] ), ( "dem1_1", [ 8 ] ), ( "NEW", [ 9 ] ) ]
+                    |> Expect.equal
+                        (Ok
+                            ( True
+                            , [ ( "PLAYPAL", [ 1 ] ), ( "F_START", [] ), ( "dem1_1", [ 8 ] ), ( "F_END", [] ), ( "STFST01", [ 7, 7, 7 ] ), ( "NEW", [ 9 ] ) ]
+                            )
+                        )
+        , test "a map in a patch takes the place of the base's map, all eleven lumps" <|
+            \_ ->
+                patched (mapGroup "E1M1" 1 ++ mapGroup "E1M2" 2 ++ [ ( "ENDOOM", [ 5 ] ) ]) (mapGroup "E1M2" 3)
+                    |> Expect.equal (Ok ( True, mapGroup "E1M1" 1 ++ mapGroup "E1M2" 3 ++ [ ( "ENDOOM", [ 5 ] ) ] ))
         , test "refuses what isn't a WAD" <|
             \_ ->
                 Wad.fromBytes (bytesOf [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ])

@@ -1,0 +1,43 @@
+# Publishes the browser host (hosts/browser) on GitHub Pages: the page, and the WADs
+# it offers, fetched by tools/fetch-wads.sh (pinned and checked). None of them is in
+# this repository.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Elm 0.19.1
+        run: |
+          curl -fsSL -o elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz
+          echo "e44af52bb27f725a973478e589d990a6428e115fe1bb14f03833134d6c0f155c  elm.gz" | sha256sum -c
+          gunzip elm.gz && chmod +x elm && sudo mv elm /usr/local/bin/elm
+      - run: hosts/browser/site.sh "$PWD/_site"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

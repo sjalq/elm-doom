@@ -1,0 +1,20 @@
+# The package's checks: it compiles with its documentation (as elm publish needs),
+# its tests pass, and it is formatted with elm-format.
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g elm@0.19.1-6 elm-test@0.19.1-revision12 elm-format@0.8.8
+      - run: elm make --docs=docs.json
+      - run: elm-test
+      - run: elm-format --validate src tests hosts

@@ -3,3 +3,5 @@ elm.js
 soundtest.js
 *.wad
 *.WAD
+wads
+_site/

@@ -3,7 +3,7 @@
 // Plain modern JavaScript, no build step. Used by index.html (the game) and
 // soundtest.html (a page that exercises the host without a game).
 //
-// Part of the Doom port in Elm-OS, under the GNU GPL version 2 or later.
+// Part of elm-doom, under the GNU GPL version 2 or later.
 
 // v_video.c's gammatable: the five gamma correction levels
 export const GAMMA = [
@@ -350,42 +350,116 @@ export function attachInput(canvas, send, onGesture) {
 }
 
 // ---------------------------------------------------------------------------
-// Starting: fetch the WAD next to the page, or take one dropped on it, then start
-// the Elm program with it and wire everything up.
+// Starting: a WAD from an address or a file (a zip is unpacked first), and maybe a
+// patch WAD (a PWAD) to play it with, then the Elm program wired to the page.
 
-export async function fetchWad(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`could not load ${url} (${res.status})`);
-  return res.arrayBuffer();
+// The bytes at `url`, telling `progress` how far it has got (bytes, total or null).
+export async function fetchWad(url, progress = () => {}) {
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw new Error(`couldn't load ${url} (its server may not let other sites fetch it)`);
+  }
+  if (!res.ok) throw new Error(`couldn't load ${url} (status ${res.status})`);
+  const total = Number(res.headers.get('content-length')) || null;
+  if (!res.body) return res.arrayBuffer();
+  const reader = res.body.getReader();
+  const parts = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    got += value.length;
+    progress(got, total);
+  }
+  return new Blob(parts).arrayBuffer();
+}
+
+// A WAD's bytes from an address (a string) or a File. A zip (as most WADs are
+// published) is unpacked: the file in it named `entry`, or else the first .wad.
+export async function loadWad(source, { entry = null, progress } = {}) {
+  const buffer = typeof source === 'string' ? await fetchWad(source, progress) : await source.arrayBuffer();
+  const magic = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength));
+  return magic[0] === 0x50 && magic[1] === 0x4b && magic[2] === 3 && magic[3] === 4 ? unzip(buffer, entry) : buffer;
+}
+
+// One file out of a zip, found through the zip's central directory.
+async function unzip(buffer, entry) {
+  const view = new DataView(buffer);
+  let end = -1;
+  for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 22 - 0xffff); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) throw new Error('the zip is damaged');
+  const want = entry && entry.toLowerCase();
+  let at = view.getUint32(end + 16, true);
+  for (let n = view.getUint16(end + 10, true); n > 0; n--) {
+    if (view.getUint32(at, true) !== 0x02014b50) throw new Error('the zip is damaged');
+    const method = view.getUint16(at + 10, true);
+    const size = view.getUint32(at + 20, true);
+    const nameLength = view.getUint16(at + 28, true);
+    const local = view.getUint32(at + 42, true);
+    const name = new TextDecoder().decode(new Uint8Array(buffer, at + 46, nameLength));
+    at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+    const file = name.toLowerCase().split('/').pop();
+    if (want ? file !== want : !file.endsWith('.wad')) continue;
+    const data = new Uint8Array(buffer, local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true), size);
+    if (method === 0) return data.slice().buffer;
+    if (method !== 8) throw new Error(`${name} is compressed in a way this page can't unpack`);
+    return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
+  }
+  throw new Error(want ? `there's no ${entry} in the zip` : "there's no .wad file in the zip");
+}
+
+// Several WADs as one, for the sounds and music: a lump is looked up in the patch
+// first, then in the IWAD, as Doom looks up the lumps of a -file.
+function layered(wads) {
+  return {
+    has: (name) => wads.some((w) => w.has(name)),
+    lump: (name) => {
+      for (const w of wads) if (w.has(name)) return w.lump(name);
+      return null;
+    },
+  };
 }
 
 export function onDrop(target, handle) {
   target.addEventListener('dragover', (e) => e.preventDefault());
-  target.addEventListener('drop', async (e) => {
+  target.addEventListener('drop', (e) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) handle(await file.arrayBuffer(), file.name);
+    if (file) handle(file);
   });
 }
 
-// everything saved under "doom:" in localStorage, for the Elm program's flags
-export function stored() {
+// Where a key is kept in localStorage: the settings once for every WAD, the saved
+// games ("save0" to "save5") apart for each WAD played (`saves` names it), since a
+// game saved in one can't be loaded in another.
+const storageKey = (key, saves) => (saves && key.startsWith('save') ? `doom:${saves}:${key}` : `doom:${key}`);
+
+// Everything kept for the Elm program's flags: the settings and `saves`'s games.
+export function stored(saves = null) {
   const out = {};
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k.startsWith('doom:')) out[k.slice(5)] = localStorage.getItem(k);
+    for (const key of ['settings', 'save0', 'save1', 'save2', 'save3', 'save4', 'save5']) {
+      const value = localStorage.getItem(storageKey(key, saves));
+      if (value !== null) out[key] = value;
     }
   } catch (e) { /* storage off */ }
   return out;
 }
 
-// Wire an Elm program (with the ports below) to the page:
-//   in:  wad (a File with the WAD), event ({kind, data1, data2, data3})
+// Wire an Elm program (with the ports below) to the page, with `wads` the IWAD's
+// bytes, or {iwad, pwad} with a patch (pwad null for none), and `saves` what to
+// keep its saved games under (see stored):
+//   in:  wad ({iwad, pwad}: Files, pwad null for none), event ({kind, data1, data2, data3})
 //   out: frame ({pixels, palette, gamma}), audio (a list of commands),
 //        status (a message to show), store ({key, value}: value null deletes)
-export function run(app, canvas, buffer, status) {
-  const wad = readWad(buffer);
+export function run(app, canvas, wads, status, saves = null) {
+  const { iwad, pwad } = wads instanceof ArrayBuffer ? { iwad: wads, pwad: null } : wads;
+  const wad = pwad ? layered([readWad(pwad), readWad(iwad)]) : readWad(iwad);
   const screen = new Screen(canvas, wad);
   const audio = new Audio(wad);
   // window.doomTiming: the intervals between new frames (ms, by the animation
@@ -422,13 +496,13 @@ export function run(app, canvas, buffer, status) {
   if (app.ports.store) {
     app.ports.store.subscribe(({ key, value }) => {
       try {
-        if (value === null) localStorage.removeItem('doom:' + key);
-        else localStorage.setItem('doom:' + key, value);
+        if (value === null) localStorage.removeItem(storageKey(key, saves));
+        else localStorage.setItem(storageKey(key, saves), value);
       } catch (e) { /* storage off: saves last as long as the page */ }
     });
   }
   attachInput(canvas, (e) => app.ports.event.send(e), () => audio.start());
-  app.ports.wad.send(new File([buffer], 'doom.wad'));
+  app.ports.wad.send({ iwad: new File([iwad], 'iwad.wad'), pwad: pwad && new File([pwad], 'pwad.wad') });
   window.doomHost = { app, wad, screen, audio };
   return window.doomHost;
 }

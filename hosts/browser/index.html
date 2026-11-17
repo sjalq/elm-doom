@@ -3,34 +3,132 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Doom</title>
+<title>Doom in Elm</title>
 <link rel="stylesheet" href="page.css">
 <link rel="icon" href="data:,">
 </head>
 <body>
 <main>
-  <canvas id="screen" width="320" height="200"></canvas>
-  <p id="help">Loading freedoom1.wad&hellip; (or drop your own IWAD here)</p>
+  <form id="choose">
+    <h1>Doom in Elm</h1>
+    <p>id Software's 1993 Doom (DOS v1.9), frame for frame, as a pure Elm program:
+      <a href="https://package.elm-lang.org/packages/sjalq/elm-doom/latest/">sjalq/elm-doom</a>
+      (<a href="https://github.com/sjalq/elm-doom">source</a>). It needs a WAD, the file
+      with the game's levels, pictures and sounds. Pick one:</p>
+    <div class="presets" id="presets"></div>
+    <p>Or give your own: an address of a WAD (or of a zip with one in it), or a file
+      from your computer. A patch is a PWAD played with the IWAD, as Doom's
+      <code>-file</code>.</p>
+    <label>IWAD
+      <span class="field"><input id="iwad" type="text" spellcheck="false" placeholder="https://example.com/doom2.wad, or choose a file">
+        <button type="button" class="file" data-for="iwad">File&hellip;</button></span></label>
+    <label>Patch (optional)
+      <span class="field"><input id="pwad" type="text" spellcheck="false" placeholder="a PWAD's address, or choose a file">
+        <button type="button" class="file" data-for="pwad">File&hellip;</button></span></label>
+    <p class="row"><button type="submit">Play</button>
+      <span class="note">A file from another site loads only if that site lets other sites fetch it
+        (CORS). A file from your computer stays on it. You can drop one on this page too.</span></p>
+  </form>
+  <canvas id="screen" width="320" height="200" hidden></canvas>
+  <p id="help"></p>
+  <input type="file" id="picker" accept=".wad,.zip,.WAD,.ZIP" hidden>
 </main>
 <script src="elm.js"></script>
 <script type="module">
-  import { fetchWad, onDrop, run, stored } from './host.js';
+  import { loadWad, onDrop, run, stored } from './host.js';
+
+  // The WADs this site serves next to the page (hosts/browser/site.sh fetches them,
+  // pinned and checked, and serve.sh links them in from wads/).
+  const PRESETS = [
+    { name: 'Freedoom', about: 'Phase 1: a free game for the Doom engine, BSD licensed.', iwad: 'wads/freedoom1.wad' },
+    { name: 'Doom (shareware)', about: 'Knee-Deep in the Dead, the episode id gave away, v1.9.', iwad: 'wads/doom1.wad' },
+    { name: "Doom, Evan's edition", about: 'The shareware episode with a patch: a new face on the status bar, and a new end.', iwad: 'wads/doom1.wad', pwad: 'wads/evan.wad' },
+  ];
+
+  const form = document.getElementById('choose');
   const canvas = document.getElementById('screen');
   const help = document.getElementById('help');
+  const picker = document.getElementById('picker');
+  const fields = { iwad: document.getElementById('iwad'), pwad: document.getElementById('pwad') };
+  // a File chosen for a field, while the field still shows its name
+  const files = { iwad: null, pwad: null };
+
+  const say = (s) => { help.textContent = s; };
+  const mb = (n) => (n / 1048576).toFixed(1);
+  const source = (which) => (files[which] && fields[which].value === files[which].name ? files[which] : fields[which].value.trim());
+
   let started = false;
-  const start = (buffer) => {
-    if (started) return;
+  async function play(iwad, pwad) {
+    if (started || !iwad) return;
     started = true;
-    const app = Elm.Main.init({ node: document.createElement('div'), flags: stored() });
-    run(app, canvas, buffer, (s) => { help.textContent = s; });
-    canvas.focus();
-  };
-  onDrop(document.body, start);
-  const wadName = new URLSearchParams(location.search).get('wad') || 'freedoom1.wad';
-  help.textContent = 'Loading ' + wadName + '\u2026 (or drop your own IWAD here)';
-  fetchWad(wadName)
-    .then(start)
-    .catch((e) => { help.textContent = e.message + ': drop a WAD file here'; });
+    form.querySelectorAll('input, button').forEach((e) => { e.disabled = true; });
+    try {
+      const load = (s) => {
+        const name = typeof s === 'string' ? s : s.name;
+        say(`Loading ${name}…`);
+        return loadWad(s, { progress: (got, total) => say(`Loading ${name}… ${mb(got)}${total ? ' of ' + mb(total) : ''} MB`) });
+      };
+      const iwadBytes = await load(iwad);
+      const pwadBytes = pwad ? await load(pwad) : null;
+      if (typeof iwad === 'string') {
+        const query = new URLSearchParams({ iwad });
+        if (typeof pwad === 'string' && pwad) query.set('pwad', pwad);
+        history.replaceState(null, '', '?' + query);
+      }
+      // saved games apart for each WAD (and patch) played
+      const saves = [iwad, pwad].filter(Boolean).map((s) => (typeof s === 'string' ? s : s.name).split('/').pop()).join('+');
+      const app = Elm.Main.init({ node: document.createElement('div'), flags: stored(saves) });
+      form.hidden = true;
+      canvas.hidden = false;
+      run(app, canvas, { iwad: iwadBytes, pwad: pwadBytes }, say, saves);
+      canvas.focus();
+    } catch (e) {
+      started = false;
+      form.querySelectorAll('input, button').forEach((el) => { el.disabled = false; });
+      say(e.message);
+    }
+  }
+
+  for (const p of PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<strong></strong><span></span>';
+    b.querySelector('strong').textContent = p.name;
+    b.querySelector('span').textContent = p.about;
+    b.addEventListener('click', () => {
+      fields.iwad.value = p.iwad;
+      fields.pwad.value = p.pwad || '';
+      play(p.iwad, p.pwad || null);
+    });
+    document.getElementById('presets').append(b);
+  }
+
+  let picking = null;
+  form.querySelectorAll('button.file').forEach((b) => b.addEventListener('click', () => {
+    picking = b.dataset.for;
+    picker.value = '';
+    picker.click();
+  }));
+  picker.addEventListener('change', () => {
+    const file = picker.files[0];
+    if (!file || !picking) return;
+    files[picking] = file;
+    fields[picking].value = file.name;
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    play(source('iwad'), source('pwad') || null);
+  });
+  onDrop(document.body, (file) => play(file, source('pwad') || null));
+
+  // ?iwad=ADDRESS&pwad=ADDRESS plays those at once (?wad=NAME: wads/NAME)
+  const query = new URLSearchParams(location.search);
+  const iwad = query.get('iwad') || (query.get('wad') && 'wads/' + query.get('wad'));
+  if (iwad) {
+    fields.iwad.value = iwad;
+    fields.pwad.value = query.get('pwad') || '';
+    play(iwad, query.get('pwad'));
+  }
 </script>
 </body>
 </html>

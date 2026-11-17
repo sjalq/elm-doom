@@ -107,7 +107,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         GotWad value ->
-            case D.decodeValue File.decoder value of
+            case D.decodeValue (D.field "iwad" File.decoder) value of
                 Ok file ->
                     ( model, Task.perform GotBytes (File.toBytes file) )
 

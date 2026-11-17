@@ -14,7 +14,7 @@
 </main>
 <script src="soundtest.js"></script>
 <script type="module">
-  import { fetchWad, onDrop, run } from './host.js';
+  import { loadWad, onDrop, run } from './host.js';
   const canvas = document.getElementById('screen');
   const help = document.getElementById('help');
   const start = (buffer) => {
@@ -22,8 +22,8 @@
     run(app, canvas, buffer, (s) => { help.textContent = s; });
   };
   let started = false;
-  onDrop(document.body, (buffer) => { if (!started) { started = true; start(buffer); } });
-  fetchWad('freedoom1.wad')
+  onDrop(document.body, async (file) => { if (!started) { started = true; start(await loadWad(file)); } });
+  loadWad('wads/freedoom1.wad')
     .then((b) => { if (!started) { started = true; start(b); } })
     .catch((e) => { help.textContent = e.message + ': drop a WAD file here'; });
 </script>

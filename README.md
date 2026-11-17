@@ -9,6 +9,15 @@ it gives back frames of palette indices and the sounds and music to play.
 It is a port, not a remake: the same input gives the same game, tic for tic, and the
 same screen, pixel for pixel, as the original.
 
+**Play it in your browser: <https://sjalq.github.io/elm-doom/>**, with Freedoom, the
+shareware episode, a patched edition of it, or any WAD you give it (an address or a
+file from your computer). That page is `hosts/browser`: a small Elm program and JavaScript
+for the canvas, the keyboard and mouse, and the sound and music.
+
+```
+elm install sjalq/elm-doom
+```
+
 ## How exact, and how that is checked
 
 `verify/oracle` is linuxdoom-1.10 built headless, with the few places where DOS v1.9
@@ -146,7 +155,8 @@ terminal. It has to:
 │                  │ that compare it with hosts/headless.                          │
 ├──────────────────┼───────────────────────────────────────────────────────────────┤
 │ tools/           │ The other checks (see the table above), the generator of the  │
-│                  │ info tables from the C source (generate.py), a JS benchmark.  │
+│                  │ info tables from the C source (generate.py), a JS benchmark,  │
+│                  │ and fetch-wads.sh.                                            │
 ├──────────────────┼───────────────────────────────────────────────────────────────┤
 │ wads/            │ Where WADs go. Nothing in it is committed.                    │
 └──────────────────┴───────────────────────────────────────────────────────────────┘
@@ -156,23 +166,30 @@ The browser host:
 
 ```
 hosts/browser/build.sh       # needs Elm 0.19.1 (ELM=/path/to/elm, or elm on PATH)
-hosts/browser/serve.sh       # http://localhost:8000/ (fetches Freedoom on first use)
+hosts/browser/serve.sh       # http://localhost:8000/ (fetches the WADs on first use)
+hosts/browser/site.sh DIR    # the whole site in DIR, WADs included, for a web server
 ```
 
-The page plays `freedoom1.wad`, or `?wad=doom1.wad` for another WAD in `wads/`, or
-any IWAD dropped on it.
+The page offers the WADs `tools/fetch-wads.sh` fetches, and takes any other: an IWAD
+and optionally a patch (a PWAD, put into the IWAD with `Doom.Wad.patch`), each an
+address or a file. A zip is unpacked. `?iwad=ADDRESS&pwad=ADDRESS` plays those
+straight away, so a link can start a game. An address on another site loads only if
+that site allows it (CORS headers); GitHub release downloads and archive.org don't,
+which is why the Pages site serves its own copies. The GitHub Pages workflow
+(`.github/workflows/pages.yml`) publishes `site.sh`'s site on every push to main.
 
 The headless host and the eco-built tools need [eco](https://github.com/eco-lang/eco-compiler)
 (`ECO=/path/to/eco hosts/headless/build.sh`). The oracle needs a C compiler and make.
 
 ## WADs
 
-No WADs are shipped, and none are ever committed. `tools/fetch-freedoom.sh` fetches
-[Freedoom](https://freedoom.github.io/) 0.13.0 (a free IWAD under a BSD licence;
-the release and its SHA-256 are pinned in the script) into `wads/`, and everything
-here defaults to `wads/freedoom1.wad`. Bring your own IWAD otherwise: the
-shareware `doom1.wad`, or `doom.wad` and `doom2.wad` if you own them, in `wads/` or
-dropped on the browser page.
+No WADs are shipped, and none are ever committed. `tools/fetch-wads.sh` fetches
+into `wads/`, each release pinned by its SHA-256 in the script:
+[Freedoom](https://freedoom.github.io/) 0.13.0 (a free IWAD under a BSD licence,
+which everything here defaults to as `wads/freedoom1.wad`), the shareware
+`doom1.wad` (v1.9, from id's own 1995 zip), and `evan.wad`, a small patch for it from
+this repository's `mods-1` release. Bring your own IWAD otherwise: `doom.wad` and
+`doom2.wad` if you own them, in `wads/` or given to the browser page.
 
 ## Credits and licence
 

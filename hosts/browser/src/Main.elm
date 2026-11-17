@@ -1,7 +1,7 @@
 port module Main exposing (main)
 
-{-| Doom in the browser: runs the `Doom` program on the WAD `host.js` hands over,
-a pass of the game loop for every 1/35 of a second of animation frames, and sends
+{-| Doom in the browser: runs the `Doom` program on the WAD `host.js` hands over
+(with a patch WAD put into it first by `Doom.Wad.patch`, if one came too), a pass of the game loop for every 1/35 of a second of animation frames, and sends
 `host.js` each frame, the sounds and music, and the settings and saved games to keep
 in the browser's storage (handed back in the flags next time).
 
@@ -18,6 +18,7 @@ import Dict exposing (Dict)
 import Doom
 import Doom.Audio exposing (Command)
 import Doom.Config exposing (Settings)
+import Doom.Wad as Wad
 import File
 import Host
 import Html
@@ -65,7 +66,7 @@ type alias Game =
 
 type Msg
     = GotWad D.Value
-    | GotBytes Bytes
+    | GotBytes ( Bytes, Maybe Bytes )
     | Input D.Value
     | Frame Float
 
@@ -112,14 +113,26 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( msg, model ) of
         ( GotWad value, Waiting _ ) ->
-            case D.decodeValue File.decoder value of
-                Ok file ->
-                    ( model, Task.perform GotBytes (File.toBytes file) )
+            case D.decodeValue wadsDecoder value of
+                Ok ( iwad, pwad ) ->
+                    ( model
+                    , File.toBytes iwad
+                        |> Task.andThen
+                            (\i ->
+                                case pwad of
+                                    Just p ->
+                                        File.toBytes p |> Task.map (\pb -> ( i, Just pb ))
+
+                                    Nothing ->
+                                        Task.succeed ( i, Nothing )
+                            )
+                        |> Task.perform GotBytes
+                    )
 
                 Err _ ->
                     ( Failed, status "That isn't a file." )
 
-        ( GotBytes bytes, Waiting stored ) ->
+        ( GotBytes ( iwad, pwad ), Waiting stored ) ->
             let
                 options =
                     Doom.defaultOptions
@@ -132,7 +145,7 @@ update msg model =
                         Nothing ->
                             { options | savedGames = stored.savedGames }
             in
-            case Doom.start withSettings bytes of
+            case patched iwad pwad |> Result.andThen (Doom.start withSettings) of
                 Ok ( doom, commands ) ->
                     ( Running { doom = doom, settings = Doom.settings doom, saveCount = Doom.saveCount doom }
                     , Cmd.batch [ sounds doom commands, status help ]
@@ -169,6 +182,28 @@ update msg model =
 
         _ ->
             ( model, Cmd.none )
+
+
+wadsDecoder : D.Decoder ( File.File, Maybe File.File )
+wadsDecoder =
+    D.map2 Tuple.pair
+        (D.field "iwad" File.decoder)
+        (D.field "pwad" (D.nullable File.decoder))
+
+
+{-| The IWAD with the patch put into it: lumps the IWAD has replaced in place, a
+level's lumps as one, the rest added (`Doom.Wad.patch`).
+-}
+patched : Bytes -> Maybe Bytes -> Result String Bytes
+patched iwad pwad =
+    case pwad of
+        Nothing ->
+            Ok iwad
+
+        Just p ->
+            Result.map2 (\base patch -> Wad.toBytes (Wad.patch patch base))
+                (Wad.fromBytes iwad)
+                (Wad.fromBytes p |> Result.mapError (\e -> "the patch: " ++ e))
 
 
 help : String
